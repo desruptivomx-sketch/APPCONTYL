@@ -1,0 +1,188 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Parrilla YUC'ATÅLOVE</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,400;0,600;1,400&family=Nunito+Sans:wght@400;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+<!-- Acceso -->
+<section id="auth" class="auth hidden" aria-label="Acceso">
+  <div class="auth-card">
+    <div class="logo">YUC'ATÅLOVE</div>
+    <h1>Parrilla de contenido</h1>
+    <p class="note">Entra con el correo que está registrado en el equipo.</p>
+    <form id="auth-form" novalidate>
+      <label for="a-email">Correo<input id="a-email" type="email" autocomplete="email" required></label>
+      <label for="a-pass">Contraseña<input id="a-pass" type="password" autocomplete="current-password" minlength="6" required></label>
+      <button class="btn" id="a-submit" type="submit">Entrar</button>
+    </form>
+    <div class="auth-links">
+      <button class="link" id="a-toggle" type="button">¿Primera vez? Crear mi acceso</button>
+      <button class="link" id="a-reset" type="button">Olvidé mi contraseña</button>
+    </div>
+    <p class="note status-line" id="a-msg" role="status"></p>
+  </div>
+</section>
+
+<!-- Nueva contraseña (después del correo de recuperación) -->
+<section id="recover" class="auth hidden" aria-label="Nueva contraseña">
+  <div class="auth-card">
+    <div class="logo">YUC'ATÅLOVE</div>
+    <h1>Nueva contraseña</h1>
+    <form id="rec-form" novalidate>
+      <label for="r-pass">Contraseña nueva<input id="r-pass" type="password" autocomplete="new-password" minlength="6" required></label>
+      <button class="btn" type="submit">Guardar contraseña</button>
+    </form>
+    <p class="note status-line" id="r-msg" role="status"></p>
+  </div>
+</section>
+
+<!-- App -->
+<div id="app" class="hidden">
+  <header class="top">
+    <div class="brand"><span class="logo">YUC'ATÅLOVE</span><span class="sub">Parrilla de contenido</span></div>
+    <nav class="tabs" role="tablist" aria-label="Secciones">
+      <button role="tab" data-view="parrilla" id="tab-parrilla">Parrilla</button>
+      <button role="tab" data-view="feed" id="tab-feed">Feed</button>
+      <button role="tab" data-view="resumen" id="tab-resumen">Resumen</button>
+      <button role="tab" data-view="ajustes" id="tab-ajustes">Ajustes</button>
+    </nav>
+    <div class="who"><span id="who-email"></span><button class="link" id="btn-logout" type="button">Salir</button></div>
+  </header>
+  <p class="banner hidden" id="banner" role="alert"></p>
+
+  <!-- PARRILLA -->
+  <main id="view-parrilla" class="view">
+    <div class="toolbar">
+      <div class="left">
+        <button class="btn small" id="btn-add" type="button">+ Agregar post</button>
+        <button class="btn ghost small" id="btn-clear" type="button">Quitar filtros</button>
+        <span class="note" id="count"></span>
+      </div>
+      <div class="right"><span class="note status-line" id="save-msg" role="status"></span></div>
+    </div>
+    <div class="table-wrap">
+      <table class="grid-table" id="tbl">
+        <thead id="thead"></thead>
+        <tbody id="tbody"></tbody>
+      </table>
+    </div>
+  </main>
+
+  <!-- FEED -->
+  <main id="view-feed" class="view hidden">
+    <div class="feed-layout" id="feed-layout">
+      <div class="feed-main">
+        <div class="profile">
+          <div class="avatar" aria-hidden="true">YL</div>
+          <div>
+            <h2>YUC'ATÅLOVE</h2>
+            <p class="note">Destination weddings in Yucatán · Together as one</p>
+            <div class="stats"><span><b id="st-feed">0</b> en el feed</span><span><b id="st-img">0</b> con imagen</span><span><b id="st-story">0</b> historias</span></div>
+          </div>
+        </div>
+        <div class="toolbar">
+          <div class="left">
+            <label class="label-sm" for="ff-mes">Mes</label><select id="ff-mes"></select>
+            <label class="label-sm" for="ff-status">Status</label><select id="ff-status"></select>
+          </div>
+          <div class="right"><button class="btn ghost small" id="btn-sort" type="button">Ordenar por fecha</button></div>
+        </div>
+        <section id="stories-wrap" class="hidden" aria-label="Historias">
+          <div class="label-sm">Historias (no aparecen en la cuadrícula)</div>
+          <div class="stories" id="stories"></div>
+        </section>
+        <section class="feed-grid" id="feed-grid" aria-label="Cuadrícula del feed"></section>
+        <p class="note">Arrastra un cuadro sobre otro para cambiarlos de lugar. Da clic en uno para subir su imagen o editarlo. Los datos son los mismos de la Parrilla.</p>
+      </div>
+      <aside class="panel hidden" id="panel" aria-label="Editar post">
+        <h3 id="p-title">Post</h3>
+        <button type="button" class="preview" id="p-preview">Subir imagen o portada</button>
+        <input type="file" id="p-file" accept="image/*" class="hidden">
+        <div class="row2">
+          <label for="p-fecha">Fecha<input type="date" id="p-fecha"></label>
+          <label for="p-tipo">Tipo de post<select id="p-tipo"></select></label>
+        </div>
+        <div class="row2">
+          <label for="p-pilar">Pilar<select id="p-pilar"></select></label>
+          <label for="p-status">Status<select id="p-status"></select></label>
+        </div>
+        <label for="p-copy">Copy<input type="text" id="p-copy"></label>
+        <label for="p-caption">Caption<textarea id="p-caption"></textarea></label>
+        <div class="actions">
+          <button class="btn" id="p-save" type="button">Guardar</button>
+          <button class="btn ghost" id="p-close" type="button">Cerrar</button>
+          <button class="btn ghost small hidden" id="p-rmimg" type="button">Quitar imagen</button>
+        </div>
+        <p class="note status-line" id="p-msg" role="status"></p>
+      </aside>
+    </div>
+  </main>
+
+  <!-- RESUMEN -->
+  <main id="view-resumen" class="view hidden">
+    <div class="toolbar"><div class="left"><label class="label-sm" for="rs-mes">Mes</label><select id="rs-mes"></select></div></div>
+    <div class="cards">
+      <section class="card"><h3>Posts por semana y tipo</h3><div class="table-wrap"><table class="sum" id="sum-semana"></table></div></section>
+      <section class="card"><h3>Posts por pilar y status</h3><div class="table-wrap"><table class="sum" id="sum-pilar"></table></div></section>
+      <section class="card"><h3>Posts por mes y pilar</h3><div class="table-wrap"><table class="sum" id="sum-mes"></table></div></section>
+      <section class="card"><h3>¿Cumplió lo esperado?</h3><div id="sum-cumplio" class="kpis"></div></section>
+    </div>
+  </main>
+
+  <!-- AJUSTES -->
+  <main id="view-ajustes" class="view hidden">
+    <div class="cards">
+      <section class="card">
+        <h3>Opciones de las listas</h3>
+        <p class="note">Cambia aquí los pilares, tipos, status y semanas. Los cambios aplican para todo el equipo.</p>
+        <div class="toolbar"><div class="left"><label class="label-sm" for="op-lista">Lista</label>
+          <select id="op-lista"><option value="pilar">Pilar / Categoría</option><option value="tipo">Tipo de post</option><option value="status">Status</option><option value="semana">Semana</option></select></div></div>
+        <ul class="opt-list" id="opt-list"></ul>
+        <form class="inline-form" id="opt-form">
+          <label for="op-valor" class="sr">Nueva opción</label><input id="op-valor" type="text" placeholder="Nueva opción" required>
+          <label for="op-color" class="sr">Color</label><select id="op-color"></select>
+          <button class="btn small" type="submit">Agregar</button>
+        </form>
+      </section>
+      <section class="card">
+        <h3>Equipo</h3>
+        <p class="note">Solo los correos de esta lista pueden ver y editar la parrilla. Después de agregar un correo, esa persona crea su acceso en la pantalla de entrada.</p>
+        <ul class="opt-list" id="team-list"></ul>
+        <form class="inline-form" id="team-form">
+          <label for="tm-email" class="sr">Correo</label><input id="tm-email" type="email" placeholder="correo@ejemplo.com" required>
+          <label for="tm-nombre" class="sr">Nombre</label><input id="tm-nombre" type="text" placeholder="Nombre">
+          <button class="btn small" type="submit">Agregar</button>
+        </form>
+      </section>
+    </div>
+  </main>
+</div>
+
+<!-- Editor de texto largo -->
+<dialog id="dlg" aria-labelledby="dlg-title">
+  <form method="dialog" class="dlg-body">
+    <h3 id="dlg-title">Editar</h3>
+    <label for="dlg-text" class="sr">Texto</label>
+    <textarea id="dlg-text" rows="14"></textarea>
+    <div class="actions"><button class="btn" value="ok" id="dlg-ok">Guardar</button><button class="btn ghost" value="cancel">Cancelar</button></div>
+  </form>
+</dialog>
+<dialog id="confirm" aria-labelledby="cf-title">
+  <form method="dialog" class="dlg-body">
+    <h3 id="cf-title">¿Eliminar?</h3>
+    <p class="note" id="cf-text"></p>
+    <div class="actions"><button class="btn" value="ok">Sí, eliminar</button><button class="btn ghost" value="cancel">Cancelar</button></div>
+  </form>
+</dialog>
+
+<script src="lib/supabase.js"></script>
+<script src="config.js"></script>
+<script src="app.js"></script>
+</body>
+</html>

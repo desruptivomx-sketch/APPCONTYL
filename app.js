@@ -1,0 +1,512 @@
+/* Parrilla YUC'ATÅLOVE — tabla + feed + resumen sobre Supabase */
+(function(){
+"use strict";
+const CFG = window.PARRILLA_CONFIG;
+const $ = id => document.getElementById(id);
+const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+
+if (!window.supabase || !CFG) { document.body.innerHTML = '<p style="padding:24px;font-family:sans-serif">No se pudo cargar la página. Revisa tu conexión y recarga.</p>'; return; }
+const sb = window.supabase.createClient(CFG.supabaseUrl, CFG.supabaseKey, { auth: { persistSession: true, detectSessionInUrl: true } });
+
+/* ---------- Listas ---------- */
+const MESES = ["Enero","Febrero","Marzo","Abril","Mayo","Junio","Julio","Agosto","Septiembre","Octubre","Noviembre","Diciembre"];
+const DIAS = ["Lunes","Martes","Miércoles","Jueves","Viernes","Sábado","Domingo"];
+const PALETA = [["#AB391B","Terracota"],["#674E4A","Chocolate"],["#95827E","Taupe"],["#C3ACA9","Rosa palo"],["#E8D9D3","Rosa claro"],["#D9C3B8","Arena oscura"],["#FAF4EE","Arena"],["#F6F6F4","Marfil"]];
+const STATIC = {
+  dia: DIAS.map(v => ({valor:v, color:null})),
+  mes: MESES.map(v => ({valor:v, color:null})),
+  cumplio: [{valor:"✔", color:"#674E4A"}, {valor:"✖", color:"#AB391B"}]
+};
+let opciones = { tipo:[], pilar:[], status:[], semana:[] };
+const lista = name => STATIC[name] || opciones[name] || [];
+const colorDe = (name, v) => (lista(name).find(o => o.valor === v) || {}).color || null;
+function textOn(hex){ if(!hex) return "#303030"; const n=parseInt(hex.slice(1),16); const r=n>>16,g=(n>>8)&255,b=n&255; return (0.299*r+0.587*g+0.114*b) > 150 ? "#303030" : "#FAF4EE"; }
+
+const COLS = [
+  {k:"fecha", label:"Fecha", type:"date", w:140, sticky:true},
+  {k:"dia", label:"Día", type:"list", list:"dia", w:110},
+  {k:"semana", label:"Semana", type:"list", list:"semana", w:110},
+  {k:"mes", label:"Mes", type:"list", list:"mes", w:120},
+  {k:"tipo", label:"Tipo de post", type:"list", list:"tipo", w:140},
+  {k:"pilar", label:"Pilar / Categoría", type:"list", list:"pilar", w:190},
+  {k:"status", label:"Status", type:"list", list:"status", w:140},
+  {k:"imagen_path", label:"Imagen", type:"thumb", w:64},
+  {k:"copy", label:"Copy", type:"long", w:220},
+  {k:"caption", label:"Caption", type:"long", w:340},
+  {k:"inspo", label:"Inspo / Referencia", type:"long", w:220},
+  {k:"comentarios", label:"Comentarios", type:"long", w:220},
+  {k:"contenido", label:"Contenido", type:"long", w:200},
+  {k:"cumplio", label:"¿Cumplió?", type:"list", list:"cumplio", w:96}
+];
+
+/* ---------- Estado ---------- */
+let user = null, posts = [], filters = {}, sortKey = "fecha", sortDir = 1, view = "parrilla";
+let pendingRender = false, current = null, pendingFile = null, pendingUrl = null, channel = null;
+const urlCache = new Map(); // path -> {url, exp}
+
+/* ---------- Utilidades ---------- */
+function banner(t){ const b=$("banner"); b.textContent=t||""; b.classList.toggle("hidden", !t); }
+let saveTimer=null;
+function saved(t, warn){ const m=$("save-msg"); m.textContent=t||""; m.classList.toggle("warn",!!warn); clearTimeout(saveTimer); if(t && !warn) saveTimer=setTimeout(()=>{m.textContent=""},2500); }
+function errMsg(e){
+  const m = (e && (e.message || e.error_description)) || "";
+  if (/row-level security|permission|not allowed|401|403/i.test(m)) return "Tu correo no tiene permiso. Pide que te agreguen en Ajustes → Equipo.";
+  if (/Failed to fetch|NetworkError|network/i.test(m)) return "Sin conexión. Revisa tu internet e intenta de nuevo.";
+  return m || "Algo falló. Intenta de nuevo.";
+}
+const fmtCorto = f => { if(!f) return "Sin fecha"; const [y,m,d]=f.split("-"); return `${+d} ${MESES[+m-1].slice(0,3).toLowerCase()}`; };
+function diaDe(f){ if(!f) return null; const d=new Date(f+"T12:00:00"); return DIAS[(d.getDay()+6)%7]; }
+function mesDe(f){ return f ? MESES[+f.split("-")[1]-1] : null; }
+
+async function signedUrls(paths){
+  const now = Date.now();
+  const need = [...new Set(paths.filter(p => p && !(urlCache.get(p) && urlCache.get(p).exp > now + 60000)))];
+  if (!need.length) return;
+  const { data, error } = await sb.storage.from(CFG.bucket).createSignedUrls(need, 3600);
+  if (error) return;
+  (data||[]).forEach(r => { if (r.signedUrl) urlCache.set(r.path, {url:r.signedUrl, exp: now + 3500000}); });
+}
+const urlOf = p => (p && urlCache.get(p)) ? urlCache.get(p).url : "";
+
+/* ---------- Acceso ---------- */
+let signupMode = false;
+function showAuth(){ $("app").classList.add("hidden"); $("recover").classList.add("hidden"); $("auth").classList.remove("hidden"); }
+$("a-toggle").addEventListener("click", () => {
+  signupMode = !signupMode;
+  $("a-submit").textContent = signupMode ? "Crear mi acceso" : "Entrar";
+  $("a-toggle").textContent = signupMode ? "Ya tengo acceso, entrar" : "¿Primera vez? Crear mi acceso";
+  $("a-pass").autocomplete = signupMode ? "new-password" : "current-password";
+  $("a-msg").textContent = signupMode ? "Usa el correo que te registraron en el equipo y elige una contraseña de al menos 6 caracteres." : "";
+});
+$("auth-form").addEventListener("submit", async e => {
+  e.preventDefault();
+  const email = $("a-email").value.trim(), password = $("a-pass").value, msg = $("a-msg");
+  if (!email || password.length < 6) { msg.textContent = "Escribe tu correo y una contraseña de al menos 6 caracteres."; msg.classList.add("warn"); return; }
+  $("a-submit").disabled = true; msg.classList.remove("warn"); msg.textContent = signupMode ? "Creando tu acceso…" : "Entrando…";
+  try {
+    if (signupMode) {
+      const { data, error } = await sb.auth.signUp({ email, password, options: { emailRedirectTo: location.origin + location.pathname } });
+      if (error) throw error;
+      msg.textContent = data.session ? "Acceso creado." : "Te enviamos un correo para confirmar tu cuenta. Ábrelo y después entra aquí.";
+    } else {
+      const { error } = await sb.auth.signInWithPassword({ email, password });
+      if (error) throw error;
+      msg.textContent = "";
+    }
+  } catch (err) {
+    msg.classList.add("warn");
+    msg.textContent = /Invalid login/i.test(err.message) ? "Correo o contraseña incorrectos." : /confirm/i.test(err.message) ? "Primero confirma tu correo con el enlace que te enviamos." : errMsg(err);
+  } finally { $("a-submit").disabled = false; }
+});
+$("a-reset").addEventListener("click", async () => {
+  const email = $("a-email").value.trim(), msg = $("a-msg");
+  if (!email) { msg.textContent = "Escribe tu correo arriba y vuelve a dar clic aquí."; msg.classList.add("warn"); return; }
+  const { error } = await sb.auth.resetPasswordForEmail(email, { redirectTo: location.origin + location.pathname });
+  msg.classList.toggle("warn", !!error);
+  msg.textContent = error ? errMsg(error) : "Te enviamos un correo para crear una contraseña nueva.";
+});
+$("rec-form").addEventListener("submit", async e => {
+  e.preventDefault();
+  const p = $("r-pass").value, msg = $("r-msg");
+  if (p.length < 6) { msg.textContent = "Usa al menos 6 caracteres."; msg.classList.add("warn"); return; }
+  const { error } = await sb.auth.updateUser({ password: p });
+  if (error) { msg.textContent = errMsg(error); msg.classList.add("warn"); return; }
+  $("recover").classList.add("hidden"); start();
+});
+$("btn-logout").addEventListener("click", async () => { await sb.auth.signOut(); });
+
+sb.auth.onAuthStateChange((event, session) => {
+  if (event === "PASSWORD_RECOVERY") { $("auth").classList.add("hidden"); $("app").classList.add("hidden"); $("recover").classList.remove("hidden"); return; }
+  const u = session ? session.user : null;
+  if (u && (!user || user.id !== u.id)) { user = u; start(); }
+  else if (!u) { user = null; if (channel) { sb.removeChannel(channel); channel = null; } showAuth(); }
+});
+
+/* ---------- Arranque ---------- */
+async function start(){
+  if (!$("recover").classList.contains("hidden")) return;
+  $("auth").classList.add("hidden"); $("app").classList.remove("hidden");
+  $("who-email").textContent = user.email;
+  banner("");
+  setView(location.hash.replace("#","") || "parrilla");
+  const { data: yo, error: e1 } = await sb.from("miembros").select("email").limit(1);
+  if (e1 || !yo || !yo.length) { banner("Tu correo (" + user.email + ") todavía no está en el equipo. Pide a alguien del equipo que lo agregue en Ajustes → Equipo y recarga la página."); }
+  await Promise.all([loadOpciones(), loadPosts(), loadTeam()]);
+  subscribe();
+}
+async function loadOpciones(){
+  const { data, error } = await sb.from("opciones").select("*").order("orden");
+  if (error) return;
+  opciones = { tipo:[], pilar:[], status:[], semana:[] };
+  (data||[]).forEach(o => { (opciones[o.lista] = opciones[o.lista] || []).push(o); });
+  fillSelects(); renderAll();
+}
+async function loadPosts(){
+  const { data, error } = await sb.from("posts").select("*").order("fecha", { ascending: true, nullsFirst: false });
+  if (error) { saved(errMsg(error), true); return; }
+  posts = data || [];
+  await signedUrls(posts.map(p => p.imagen_path));
+  renderAll();
+}
+function subscribe(){
+  if (channel) sb.removeChannel(channel);
+  channel = sb.channel("parrilla")
+    .on("postgres_changes", { event: "*", schema: "public", table: "posts" }, async payload => {
+      if (payload.eventType === "DELETE") posts = posts.filter(p => p.id !== payload.old.id);
+      else { const n = payload.new; const i = posts.findIndex(p => p.id === n.id); if (i >= 0) posts[i] = n; else posts.push(n); if (n.imagen_path) await signedUrls([n.imagen_path]); }
+      if (current) { const c = posts.find(p => p.id === current.id); current = c || null; }
+      renderAll(true);
+    })
+    .on("postgres_changes", { event: "*", schema: "public", table: "opciones" }, () => loadOpciones())
+    .subscribe();
+}
+
+/* ---------- Vistas ---------- */
+const VIEWS = ["parrilla","feed","resumen","ajustes"];
+function setView(v){
+  if (!VIEWS.includes(v)) v = "parrilla";
+  view = v;
+  VIEWS.forEach(x => { $("view-"+x).classList.toggle("hidden", x !== v); $("tab-"+x).setAttribute("aria-selected", String(x === v)); });
+  if (location.hash !== "#"+v) history.replaceState(null, "", "#"+v);
+  renderAll();
+}
+document.querySelectorAll(".tabs button").forEach(b => b.addEventListener("click", () => setView(b.dataset.view)));
+window.addEventListener("hashchange", () => setView(location.hash.replace("#","")));
+
+function renderAll(fromRemote){
+  if (fromRemote && $("tbody").contains(document.activeElement)) { pendingRender = true; return; }
+  pendingRender = false;
+  if (view === "parrilla") renderTable();
+  if (view === "feed") renderFeed();
+  if (view === "resumen") renderResumen();
+  if (view === "ajustes") { renderOpts(); renderTeam(); }
+}
+document.addEventListener("focusout", () => setTimeout(() => { if (pendingRender && !$("tbody").contains(document.activeElement)) renderAll(); }, 0));
+
+/* ---------- Parrilla ---------- */
+function optionsHtml(name, value, withBlank){
+  const opts = lista(name).map(o => o.valor);
+  if (value && !opts.includes(value)) opts.push(value);
+  return (withBlank ? '<option value=""></option>' : "") + opts.map(v => `<option value="${esc(v)}"${v === value ? " selected" : ""}>${esc(v)}</option>`).join("");
+}
+function renderHead(){
+  const h1 = COLS.map(c => `<th class="${c.sticky ? "sticky" : ""}" style="min-width:${c.w}px" data-sort="${c.k}" title="Ordenar">${esc(c.label)}${sortKey === c.k ? (sortDir > 0 ? " ↑" : " ↓") : ""}</th>`).join("") + '<th style="min-width:44px"></th>';
+  const h2 = COLS.map(c => {
+    let inner = "";
+    if (c.type === "list") inner = `<select data-f="${c.k}" aria-label="Filtrar ${esc(c.label)}"><option value="">Todos</option>${lista(c.list).map(o => `<option value="${esc(o.valor)}"${filters[c.k] === o.valor ? " selected" : ""}>${esc(o.valor)}</option>`).join("")}<option value="__vacio"${filters[c.k] === "__vacio" ? " selected" : ""}>(vacío)</option></select>`;
+    else if (c.type === "long") inner = `<input data-f="${c.k}" type="search" placeholder="Buscar" value="${esc(filters[c.k] || "")}" aria-label="Buscar en ${esc(c.label)}">`;
+    else if (c.type === "date") inner = `<select data-f="fecha" aria-label="Filtrar fecha"><option value="">Todas</option><option value="__futuro"${filters.fecha === "__futuro" ? " selected" : ""}>De hoy en adelante</option><option value="__pasado"${filters.fecha === "__pasado" ? " selected" : ""}>Ya pasaron</option><option value="__vacio"${filters.fecha === "__vacio" ? " selected" : ""}>Sin fecha</option></select>`;
+    else if (c.type === "thumb") inner = `<select data-f="imagen_path" aria-label="Filtrar imagen"><option value="">Todas</option><option value="__con"${filters.imagen_path === "__con" ? " selected" : ""}>Con imagen</option><option value="__vacio"${filters.imagen_path === "__vacio" ? " selected" : ""}>Sin imagen</option></select>`;
+    return `<th class="${c.sticky ? "sticky" : ""}">${inner}</th>`;
+  }).join("") + "<th></th>";
+  $("thead").innerHTML = `<tr class="h1">${h1}</tr><tr class="h2">${h2}</tr>`;
+  $("thead").querySelectorAll("[data-sort]").forEach(th => th.addEventListener("click", () => { const k = th.dataset.sort; if (sortKey === k) sortDir = -sortDir; else { sortKey = k; sortDir = 1; } renderTable(); }));
+  $("thead").querySelectorAll("[data-f]").forEach(el => el.addEventListener(el.tagName === "INPUT" ? "input" : "change", () => { filters[el.dataset.f] = el.value; renderBody(); if (el.tagName === "INPUT") { /* keep focus */ } }));
+}
+function pass(p){
+  const hoy = new Date().toISOString().slice(0,10);
+  for (const [k, v] of Object.entries(filters)) {
+    if (!v) continue;
+    const val = p[k];
+    if (v === "__vacio") { if (val) return false; continue; }
+    if (k === "fecha") { if (v === "__futuro" && !(val && val >= hoy)) return false; if (v === "__pasado" && !(val && val < hoy)) return false; continue; }
+    if (k === "imagen_path") { if (v === "__con" && !val) return false; continue; }
+    const col = COLS.find(c => c.k === k);
+    if (col && col.type === "long") { if (!String(val || "").toLowerCase().includes(v.toLowerCase())) return false; }
+    else if (val !== v) return false;
+  }
+  return true;
+}
+function sortedRows(){
+  const rows = posts.filter(pass);
+  const k = sortKey;
+  rows.sort((a, b) => {
+    let x = a[k] ?? "", y = b[k] ?? "";
+    if (k === "mes") { x = MESES.indexOf(x); y = MESES.indexOf(y); }
+    if (k === "dia") { x = DIAS.indexOf(x); y = DIAS.indexOf(y); }
+    if (x === "" || x === -1) return 1; if (y === "" || y === -1) return -1;
+    return (x > y ? 1 : x < y ? -1 : 0) * sortDir || String(a.created_at).localeCompare(String(b.created_at));
+  });
+  return rows;
+}
+function renderTable(){ renderHead(); renderBody(); }
+function cellHtml(p, c){
+  const v = p[c.k];
+  if (c.type === "date") return `<input type="date" data-k="fecha" value="${esc(v || "")}" aria-label="Fecha">`;
+  if (c.type === "list") {
+    const col = colorDe(c.list, v);
+    const style = col ? `background:${col};color:${textOn(col)}` : "";
+    return `<select data-k="${c.k}" class="${v && col ? "chip-sel" : ""}" style="${style}" aria-label="${esc(c.label)}">${optionsHtml(c.list, v, true)}</select>`;
+  }
+  if (c.type === "thumb") return v && urlOf(v) ? `<button class="icon-btn" data-img="${p.id}" title="Ver en el feed"><img class="thumb" src="${esc(urlOf(v))}" alt=""></button>` : `<button class="icon-btn" data-img="${p.id}" title="Subir imagen" aria-label="Subir imagen">＋</button>`;
+  if (c.type === "long") {
+    const isLink = /^https?:\/\/\S+$/.test(String(v || "").trim());
+    if (isLink) return `<div style="display:flex;align-items:flex-start"><button class="txt" data-long="${c.k}" title="Editar">${esc(v)}</button><a class="icon-btn" href="${esc(String(v).trim())}" target="_blank" rel="noopener" title="Abrir enlace" aria-label="Abrir enlace">↗</a></div>`;
+    return `<button class="txt${v ? "" : " empty"}" data-long="${c.k}" title="Editar">${v ? esc(v) : "—"}</button>`;
+  }
+  return "";
+}
+function renderBody(){
+  const rows = sortedRows();
+  $("count").textContent = `${rows.length} de ${posts.length} posts`;
+  $("tbody").innerHTML = rows.length ? rows.map(p => `<tr data-id="${p.id}">${COLS.map(c => `<td class="c-${c.k}${c.sticky ? " sticky" : ""}">${cellHtml(p, c)}</td>`).join("")}<td class="c-acc"><button class="icon-btn" data-del="${p.id}" title="Eliminar post" aria-label="Eliminar post">✕</button></td></tr>`).join("")
+    : `<tr><td colspan="${COLS.length + 1}" style="padding:28px;text-align:center;color:var(--chocolate)">${posts.length ? "Ningún post coincide con los filtros." : "Todavía no hay posts. Da clic en “+ Agregar post”."}</td></tr>`;
+}
+$("tbody").addEventListener("change", e => {
+  const el = e.target, tr = el.closest("tr"); if (!tr || !el.dataset.k) return;
+  const id = tr.dataset.id, k = el.dataset.k, v = el.value || null;
+  const patch = { [k]: v };
+  const p = posts.find(x => x.id === id);
+  if (k === "fecha" && v && p) { if (!p.dia) patch.dia = diaDe(v); if (!p.mes) patch.mes = mesDe(v); }
+  if (el.tagName === "SELECT") { const c = COLS.find(x => x.k === k); const col = colorDe(c.list, v); el.className = v && col ? "chip-sel" : ""; el.style.cssText = col ? `background:${col};color:${textOn(col)}` : ""; }
+  savePatch(id, patch, k === "fecha" && (patch.dia || patch.mes));
+});
+$("tbody").addEventListener("click", e => {
+  const long = e.target.closest("[data-long]"), del = e.target.closest("[data-del]"), img = e.target.closest("[data-img]");
+  const tr = e.target.closest("tr"); if (!tr) return;
+  const p = posts.find(x => x.id === tr.dataset.id); if (!p) return;
+  if (long) editLong(p, long.dataset.long);
+  else if (del) confirmDelete(p);
+  else if (img) { setView("feed"); openPanel(p); }
+});
+async function savePatch(id, patch, rerender){
+  const p = posts.find(x => x.id === id); if (p) Object.assign(p, patch);
+  saved("Guardando…");
+  const { error } = await sb.from("posts").update(patch).eq("id", id);
+  if (error) saved(errMsg(error), true); else saved("Guardado");
+  if (rerender) renderBody();
+}
+function editLong(p, k){
+  const c = COLS.find(x => x.k === k), d = $("dlg");
+  $("dlg-title").textContent = `${c.label}${p.fecha ? " · " + fmtCorto(p.fecha) : ""}`;
+  $("dlg-text").value = p[k] || "";
+  d.onclose = () => { if (d.returnValue === "ok") { const v = $("dlg-text").value; if (v !== (p[k] || "")) { savePatch(p.id, { [k]: v || null }, true); } } };
+  d.returnValue = ""; d.showModal(); $("dlg-text").focus();
+}
+function confirmDelete(p){
+  const d = $("confirm");
+  $("cf-text").textContent = `Se eliminará el post${p.fecha ? " del " + fmtCorto(p.fecha) : ""}${p.copy ? " (“" + p.copy.slice(0,60) + "”)" : ""} con su imagen. No se puede deshacer.`;
+  d.onclose = async () => {
+    if (d.returnValue !== "ok") return;
+    const { error } = await sb.from("posts").delete().eq("id", p.id);
+    if (error) { saved(errMsg(error), true); return; }
+    if (p.imagen_path) sb.storage.from(CFG.bucket).remove([p.imagen_path]);
+    posts = posts.filter(x => x.id !== p.id); if (current && current.id === p.id) closePanel(); renderAll(); saved("Post eliminado");
+  };
+  d.returnValue = ""; d.showModal();
+}
+async function addPost(extra){
+  const minOrden = posts.reduce((m, p) => Math.min(m, p.orden ?? 0), 0);
+  const row = Object.assign({ status: (opciones.status[0] || {}).valor || "Pendiente", orden: minOrden - 1 }, extra || {});
+  saved("Creando…");
+  const { data, error } = await sb.from("posts").insert(row).select().single();
+  if (error) { saved(errMsg(error), true); return null; }
+  if (!posts.find(p => p.id === data.id)) posts.push(data);
+  saved("Post creado"); renderAll();
+  return data;
+}
+$("btn-add").addEventListener("click", async () => {
+  const p = await addPost();
+  if (p) { filters = {}; sortKey = "created_at"; sortDir = -1; renderTable(); const f = $("tbody").querySelector(`tr[data-id="${p.id}"] input[type=date]`); if (f) f.focus(); }
+});
+$("btn-clear").addEventListener("click", () => { filters = {}; sortKey = "fecha"; sortDir = 1; renderTable(); });
+
+/* ---------- Feed ---------- */
+function fillSelects(){
+  const fm = $("ff-mes").value, fs = $("ff-status").value, rm = $("rs-mes").value;
+  $("ff-mes").innerHTML = '<option value="">Todos</option>' + MESES.map(m => `<option>${m}</option>`).join("");
+  $("rs-mes").innerHTML = '<option value="">Todos</option>' + MESES.map(m => `<option>${m}</option>`).join("");
+  $("ff-status").innerHTML = '<option value="">Todos</option>' + lista("status").map(o => `<option>${esc(o.valor)}</option>`).join("");
+  $("ff-mes").value = fm; $("ff-status").value = fs; $("rs-mes").value = rm;
+  ["tipo","pilar","status"].forEach(n => { const s = $("p-"+n), v = s.value; s.innerHTML = optionsHtml(n, v, true); s.value = v; });
+  $("op-color").innerHTML = PALETA.map(([h, n]) => `<option value="${h}">${n}</option>`).join("");
+}
+$("ff-mes").addEventListener("change", renderFeed); $("ff-status").addEventListener("change", renderFeed);
+const ICON = {
+  Reel: c => `<svg class="type" viewBox="0 0 24 24" fill="none" stroke="${c}" stroke-width="2" aria-hidden="true"><rect x="3" y="3" width="18" height="18" rx="4"/><path d="M3 8h18M8 3l3 5M14 3l3 5"/><path d="M10 11.5v5l4.5-2.5z" fill="${c}" stroke="none"/></svg>`,
+  Carrusel: c => `<svg class="type" viewBox="0 0 24 24" fill="none" stroke="${c}" stroke-width="2" aria-hidden="true"><rect x="7" y="7" width="14" height="14" rx="2"/><path d="M17 7V5a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v10a2 2 0 0 0 2 2h2"/></svg>`
+};
+function feedList(){
+  const m = $("ff-mes").value, s = $("ff-status").value;
+  return posts.filter(p => (!m || p.mes === m || (!p.mes && mesDe(p.fecha) === m)) && (!s || p.status === s));
+}
+function renderFeed(){
+  const list = feedList();
+  const feed = list.filter(p => p.tipo !== "Historia").sort((a, b) => (a.orden ?? 0) - (b.orden ?? 0) || String(b.fecha || "").localeCompare(String(a.fecha || "")));
+  const st = list.filter(p => p.tipo === "Historia").sort((a, b) => String(a.fecha || "").localeCompare(String(b.fecha || "")));
+  $("st-feed").textContent = feed.length; $("st-img").textContent = feed.filter(p => p.imagen_path).length; $("st-story").textContent = st.length;
+  const g = $("feed-grid"); g.innerHTML = "";
+  if (!feed.length) g.innerHTML = '<div class="empty-state">No hay posts para este filtro. Agrégalos en la pestaña Parrilla.</div>';
+  feed.forEach(p => {
+    const b = document.createElement("button"); b.type = "button"; b.draggable = true; b.dataset.id = p.id;
+    const src = urlOf(p.imagen_path);
+    b.className = "tile" + (src ? "" : " empty") + (current && current.id === p.id ? " sel" : "");
+    b.setAttribute("aria-label", `${p.tipo || "Post"} del ${fmtCorto(p.fecha)}: ${p.copy || "sin copy"}`);
+    const st = p.status || "", sc = colorDe("status", st) || "#F6F6F4";
+    b.innerHTML = (src ? `<img src="${esc(src)}" alt="">` : `<div class="ph"><div class="label-sm">${esc(p.pilar || "")}</div><div class="t">${esc(p.copy || p.tipo || "Post")}</div><div class="u">Subir imagen</div></div>`)
+      + (ICON[p.tipo] ? ICON[p.tipo](src ? "#fff" : "#674E4A") : "")
+      + `<div class="meta"><span class="chip date">${fmtCorto(p.fecha)}</span>${st ? `<span class="chip" style="background:${sc};color:${textOn(sc)}">${esc(st)}</span>` : ""}</div>`;
+    b.addEventListener("click", () => openPanel(p));
+    b.addEventListener("dragstart", e => { e.dataTransfer.setData("text/plain", p.id); e.dataTransfer.effectAllowed = "move"; });
+    b.addEventListener("dragover", e => { e.preventDefault(); b.classList.add("drag-over"); });
+    b.addEventListener("dragleave", () => b.classList.remove("drag-over"));
+    b.addEventListener("drop", e => { e.preventDefault(); b.classList.remove("drag-over"); const from = e.dataTransfer.getData("text/plain"); if (from && from !== p.id) moveTo(from, p.id, feed); });
+    g.appendChild(b);
+  });
+  const sw = $("stories-wrap"), s = $("stories"); s.innerHTML = ""; sw.classList.toggle("hidden", !st.length);
+  st.forEach(p => {
+    const b = document.createElement("button"); b.type = "button"; b.className = "story";
+    const src = urlOf(p.imagen_path);
+    b.innerHTML = `<div class="ring"><span style="${src ? `background-image:url('${esc(src)}')` : ""}"></span></div>${esc(fmtCorto(p.fecha))}`;
+    b.addEventListener("click", () => openPanel(p)); s.appendChild(b);
+  });
+}
+async function moveTo(fromId, toId, feed){
+  const ids = feed.map(p => p.id), fi = ids.indexOf(fromId), ti = ids.indexOf(toId); if (fi < 0 || ti < 0) return;
+  ids.splice(ti, 0, ids.splice(fi, 1)[0]);
+  const base = Math.min(...feed.map(p => p.orden ?? 0));
+  const changes = [];
+  ids.forEach((id, i) => { const p = posts.find(x => x.id === id); if (p.orden !== base + i) { p.orden = base + i; changes.push(p); } });
+  renderFeed();
+  for (const p of changes) { const { error } = await sb.from("posts").update({ orden: p.orden }).eq("id", p.id); if (error) { banner(errMsg(error)); break; } }
+}
+$("btn-sort").addEventListener("click", async () => {
+  const all = [...posts].sort((a, b) => String(b.fecha || "").localeCompare(String(a.fecha || "")));
+  const changes = []; all.forEach((p, i) => { if (p.orden !== i) { p.orden = i; changes.push(p); } });
+  renderFeed();
+  for (const p of changes) { const { error } = await sb.from("posts").update({ orden: p.orden }).eq("id", p.id); if (error) { banner(errMsg(error)); break; } }
+});
+
+function pmsg(t, warn){ const m = $("p-msg"); m.textContent = t || ""; m.classList.toggle("warn", !!warn); }
+function setPreview(src){ $("p-preview").innerHTML = src ? `<img src="${esc(src)}" alt="Imagen del post">` : "Subir imagen o portada<br><span class='note'>Vertical 4:5 se ve mejor</span>"; }
+function openPanel(p){
+  current = p; pendingFile = null; if (pendingUrl) { URL.revokeObjectURL(pendingUrl); pendingUrl = null; }
+  $("feed-layout").classList.add("has-panel"); $("panel").classList.remove("hidden"); pmsg("");
+  $("p-title").textContent = p.fecha ? `Post del ${fmtCorto(p.fecha)}` : "Post";
+  $("p-fecha").value = p.fecha || "";
+  ["tipo","pilar","status"].forEach(n => { $("p-"+n).innerHTML = optionsHtml(n, p[n], true); $("p-"+n).value = p[n] || ""; });
+  $("p-copy").value = p.copy || ""; $("p-caption").value = p.caption || "";
+  setPreview(urlOf(p.imagen_path)); $("p-rmimg").classList.toggle("hidden", !p.imagen_path);
+  renderFeed();
+  if (window.innerWidth < 900) $("panel").scrollIntoView({ behavior: "smooth", block: "start" });
+}
+function closePanel(){ current = null; $("panel").classList.add("hidden"); $("feed-layout").classList.remove("has-panel"); renderFeed(); }
+$("p-close").addEventListener("click", closePanel);
+$("p-preview").addEventListener("click", () => $("p-file").click());
+$("p-file").addEventListener("change", e => {
+  const f = e.target.files[0]; e.target.value = ""; if (!f) return;
+  if (!f.type.startsWith("image/")) { pmsg("Ese archivo no es una imagen.", true); return; }
+  if (f.size > 20 * 1024 * 1024) { pmsg("La imagen pesa más de 20 MB. Usa una más ligera.", true); return; }
+  pendingFile = f; if (pendingUrl) URL.revokeObjectURL(pendingUrl); pendingUrl = URL.createObjectURL(f); setPreview(pendingUrl); pmsg("Imagen lista. Da clic en Guardar.");
+});
+$("p-save").addEventListener("click", async () => {
+  if (!current) return;
+  const btn = $("p-save"); btn.disabled = true;
+  try {
+    const patch = { fecha: $("p-fecha").value || null, tipo: $("p-tipo").value || null, pilar: $("p-pilar").value || null, status: $("p-status").value || null, copy: $("p-copy").value.trim() || null, caption: $("p-caption").value || null };
+    if (patch.fecha && patch.fecha !== current.fecha) { if (!current.dia) patch.dia = diaDe(patch.fecha); if (!current.mes) patch.mes = mesDe(patch.fecha); }
+    const old = current.imagen_path;
+    if (pendingFile) {
+      pmsg("Subiendo imagen…");
+      const ext = (pendingFile.name.split(".").pop() || "jpg").toLowerCase().replace(/[^a-z0-9]/g, "") || "jpg";
+      const path = `${current.id}/${Date.now()}.${ext}`;
+      const { error: ue } = await sb.storage.from(CFG.bucket).upload(path, pendingFile, { contentType: pendingFile.type, upsert: false });
+      if (ue) throw ue;
+      patch.imagen_path = path;
+    }
+    pmsg("Guardando…");
+    const { error } = await sb.from("posts").update(patch).eq("id", current.id);
+    if (error) throw error;
+    if (patch.imagen_path) { await signedUrls([patch.imagen_path]); if (old) sb.storage.from(CFG.bucket).remove([old]); }
+    Object.assign(current, patch); pendingFile = null; pmsg("Guardado."); renderFeed(); setPreview(urlOf(current.imagen_path)); $("p-rmimg").classList.toggle("hidden", !current.imagen_path);
+  } catch (err) { pmsg(errMsg(err), true); }
+  finally { btn.disabled = false; }
+});
+$("p-rmimg").addEventListener("click", async () => {
+  if (!current || !current.imagen_path) return;
+  const old = current.imagen_path;
+  const { error } = await sb.from("posts").update({ imagen_path: null }).eq("id", current.id);
+  if (error) { pmsg(errMsg(error), true); return; }
+  sb.storage.from(CFG.bucket).remove([old]); current.imagen_path = null; setPreview(""); $("p-rmimg").classList.add("hidden"); pmsg("Imagen quitada."); renderFeed();
+});
+
+/* ---------- Resumen ---------- */
+function crossTable(el, rowsKey, rowVals, colKey, colVals, rowsFilter){
+  const data = posts.filter(rowsFilter || (() => true));
+  const cnt = (r, c) => data.filter(p => (r === null || p[rowsKey] === r) && (c === null || p[colKey] === c)).length;
+  const rowsUsed = rowVals.filter(r => cnt(r, null) > 0);
+  const extraRows = cnt(null, null) - rowsUsed.reduce((s, r) => s + cnt(r, null), 0);
+  let h = `<thead><tr><th></th>${colVals.map(c => `<th>${esc(c)}</th>`).join("")}<th>Total</th></tr></thead><tbody>`;
+  rowsUsed.forEach(r => { h += `<tr><td>${esc(r)}</td>${colVals.map(c => { const n = cnt(r, c); return `<td class="${n ? "" : "zero"}">${n}</td>`; }).join("")}<td><b>${cnt(r, null)}</b></td></tr>`; });
+  if (extraRows > 0) h += `<tr><td class="note">Sin asignar</td>${colVals.map(c => { const n = data.filter(p => !rowVals.includes(p[rowsKey]) && p[colKey] === c).length; return `<td class="${n ? "" : "zero"}">${n}</td>`; }).join("")}<td>${extraRows}</td></tr>`;
+  h += `<tr class="total"><td>Total</td>${colVals.map(c => `<td>${cnt(null, c)}</td>`).join("")}<td>${data.length}</td></tr></tbody>`;
+  el.innerHTML = data.length ? h : '<tbody><tr><td class="note">Todavía no hay posts para este filtro.</td></tr></tbody>';
+}
+$("rs-mes").addEventListener("change", renderResumen);
+function renderResumen(){
+  const m = $("rs-mes").value, byMes = p => !m || p.mes === m;
+  crossTable($("sum-semana"), "semana", lista("semana").map(o => o.valor), "tipo", lista("tipo").map(o => o.valor), byMes);
+  crossTable($("sum-pilar"), "pilar", lista("pilar").map(o => o.valor), "status", lista("status").map(o => o.valor), byMes);
+  crossTable($("sum-mes"), "mes", MESES, "pilar", lista("pilar").map(o => o.valor));
+  const d = posts.filter(byMes), si = d.filter(p => p.cumplio === "✔").length, no = d.filter(p => p.cumplio === "✖").length;
+  $("sum-cumplio").innerHTML = `<div class="kpi"><b>${si}</b>Cumplieron ✔</div><div class="kpi"><b>${no}</b>No cumplieron ✖</div><div class="kpi"><b>${d.length - si - no}</b>Sin evaluar</div>`;
+}
+
+/* ---------- Ajustes ---------- */
+function renderOpts(){
+  const l = $("op-lista").value, items = opciones[l] || [];
+  $("opt-list").innerHTML = items.length ? items.map((o, i) => `<li><span class="sw" style="background:${esc(o.color || "#fff")}"></span><span class="grow">${esc(o.valor)}</span>
+    <label class="sr" for="oc-${i}">Color de ${esc(o.valor)}</label><select id="oc-${i}" data-color="${esc(o.valor)}">${PALETA.map(([h, n]) => `<option value="${h}"${(o.color || "").toUpperCase() === h ? " selected" : ""}>${n}</option>`).join("")}</select>
+    <button class="icon-btn" data-up="${i}" title="Subir" aria-label="Subir">↑</button><button class="icon-btn" data-rm="${esc(o.valor)}" title="Quitar" aria-label="Quitar ${esc(o.valor)}">✕</button></li>`).join("") : '<li class="note">Sin opciones.</li>';
+}
+$("op-lista").addEventListener("change", renderOpts);
+$("opt-list").addEventListener("change", async e => {
+  const s = e.target.closest("[data-color]"); if (!s) return;
+  const { error } = await sb.from("opciones").update({ color: s.value }).eq("lista", $("op-lista").value).eq("valor", s.dataset.color);
+  if (error) banner(errMsg(error)); else loadOpciones();
+});
+$("opt-list").addEventListener("click", async e => {
+  const l = $("op-lista").value, items = opciones[l] || [];
+  const rm = e.target.closest("[data-rm]"), up = e.target.closest("[data-up]");
+  if (rm) {
+    const v = rm.dataset.rm, usados = posts.filter(p => p[l] === v).length;
+    const d = $("confirm"); $("cf-text").textContent = `Se quitará “${v}” de la lista.${usados ? ` ${usados} post(s) lo tienen; conservarán el texto.` : ""}`;
+    d.onclose = async () => { if (d.returnValue !== "ok") return; const { error } = await sb.from("opciones").delete().eq("lista", l).eq("valor", v); if (error) banner(errMsg(error)); else loadOpciones(); };
+    d.returnValue = ""; d.showModal();
+  }
+  if (up) {
+    const i = +up.dataset.up; if (i === 0) return;
+    const a = items[i], b = items[i - 1];
+    for (const [o, ord] of [[a, i], [b, i + 1]]) { const { error } = await sb.from("opciones").update({ orden: ord }).eq("lista", l).eq("valor", o.valor); if (error) { banner(errMsg(error)); return; } }
+    items.forEach((o, k) => { if (o !== a && o !== b && o.orden !== k + 1) sb.from("opciones").update({ orden: k + 1 }).eq("lista", l).eq("valor", o.valor); });
+    loadOpciones();
+  }
+});
+$("opt-form").addEventListener("submit", async e => {
+  e.preventDefault();
+  const l = $("op-lista").value, v = $("op-valor").value.trim(); if (!v) return;
+  if ((opciones[l] || []).some(o => o.valor.toLowerCase() === v.toLowerCase())) { banner("Esa opción ya existe."); return; }
+  const { error } = await sb.from("opciones").insert({ lista: l, valor: v, color: $("op-color").value, orden: (opciones[l] || []).length + 1 });
+  if (error) banner(errMsg(error)); else { $("op-valor").value = ""; banner(""); loadOpciones(); }
+});
+let team = [];
+async function loadTeam(){ const { data } = await sb.from("miembros").select("*").order("created_at"); team = data || []; if (view === "ajustes") renderTeam(); }
+function renderTeam(){
+  $("team-list").innerHTML = team.length ? team.map(m => `<li><span class="grow">${esc(m.nombre ? m.nombre + " · " : "")}${esc(m.email)}</span>${m.email.toLowerCase() === (user.email || "").toLowerCase() ? '<span class="note">Tú</span>' : `<button class="icon-btn" data-rmt="${esc(m.email)}" title="Quitar" aria-label="Quitar ${esc(m.email)}">✕</button>`}</li>`).join("") : '<li class="note">No puedes ver el equipo hasta que tu correo esté en la lista.</li>';
+}
+$("team-list").addEventListener("click", e => {
+  const b = e.target.closest("[data-rmt]"); if (!b) return;
+  const em = b.dataset.rmt, d = $("confirm"); $("cf-text").textContent = `${em} ya no podrá ver ni editar la parrilla.`;
+  d.onclose = async () => { if (d.returnValue !== "ok") return; const { error } = await sb.from("miembros").delete().eq("email", em); if (error) banner(errMsg(error)); else loadTeam(); };
+  d.returnValue = ""; d.showModal();
+});
+$("team-form").addEventListener("submit", async e => {
+  e.preventDefault();
+  const email = $("tm-email").value.trim().toLowerCase(), nombre = $("tm-nombre").value.trim() || null; if (!email) return;
+  const { error } = await sb.from("miembros").insert({ email, nombre });
+  if (error) banner(/duplicate/i.test(error.message) ? "Ese correo ya está en el equipo." : errMsg(error)); else { $("tm-email").value = ""; $("tm-nombre").value = ""; banner(""); loadTeam(); }
+});
+
+/* ---------- Inicio ---------- */
+sb.auth.getSession().then(({ data }) => { if (!data.session) showAuth(); });
+})();
