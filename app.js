@@ -218,7 +218,7 @@ function renderAll(fromRemote){
   if (view === "parrilla") renderTable();
   if (view === "feed") renderFeed();
   if (view === "resumen") renderResumen();
-  if (view === "ajustes") { renderOpts(); renderTeam(); }
+  if (view === "ajustes") { renderOpts(); renderTeam(); loadUso(); }
 }
 document.addEventListener("focusout", () => setTimeout(() => { if (pendingRender && !$("tbody").contains(document.activeElement)) renderAll(); }, 0));
 let rz; window.addEventListener("resize", () => { clearTimeout(rz); rz = setTimeout(() => { if (view === "parrilla") renderTable(); }, 200); });
@@ -613,6 +613,24 @@ $("team-form").addEventListener("submit", async e => {
   if (error) banner(/duplicate/i.test(error.message) ? "Ese correo ya está en el equipo." : errMsg(error)); else { $("tm-email").value = ""; $("tm-nombre").value = ""; banner(""); loadTeam(); }
 });
 
+
+
+/* ---------- Espacio usado ---------- */
+const LIMITE = 1024 * 1024 * 1024; // 1 GB del plan gratuito
+const fmtMB = b => b >= 1024 * 1024 * 1024 ? (b / 1024 / 1024 / 1024).toFixed(2) + " GB" : (b / 1024 / 1024).toFixed(1) + " MB";
+async function loadUso(){
+  const { data, error } = await sb.rpc("uso_almacenamiento");
+  if (error || !data || !data.length) { $("st-text").textContent = "No se pudo calcular el espacio."; return; }
+  const { bytes, archivos } = data[0], pct = Math.min(100, bytes / LIMITE * 100);
+  const conImg = posts.filter(p => p.imagen_path).length, prom = conImg ? bytes / conImg : 0;
+  $("st-bar").style.width = Math.max(pct, bytes ? 1 : 0) + "%";
+  $("st-meter").setAttribute("aria-valuenow", pct.toFixed(1)); $("st-meter").classList.toggle("alto", pct >= 80);
+  let t = `${fmtMB(bytes)} de 1 GB (${pct < 1 && bytes ? "menos de 1" : Math.round(pct)}%) · ${conImg} post${conImg === 1 ? "" : "s"} con imagen`;
+  const porImg = prom || 0.3 * 1024 * 1024; // estimado: ~0.3 MB por post (imagen optimizada + miniatura)
+  t += ` · caben unas ${Math.max(0, Math.floor((LIMITE - bytes) / porImg)).toLocaleString("es-MX")} imágenes más`;
+  if (pct >= 80) t += ". Ya casi se llena: borra imágenes que no uses o considera el plan Pro.";
+  $("st-text").textContent = t;
+}
 
 /* ---------- Mi contraseña ---------- */
 $("pw-form").addEventListener("submit", async e => {

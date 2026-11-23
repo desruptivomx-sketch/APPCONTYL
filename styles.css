@@ -217,3 +217,8 @@ body{-webkit-tap-highlight-color:transparent;overscroll-behavior-y:none}
 
 /* Gotham Rounded solo viene en Light: el texto normal usa 300 y los énfasis se dibujan un poco más gruesos */
 body{font-weight:300}
+
+/* Espacio usado */
+.meter{height:12px;border-radius:999px;background:var(--arena);border:1px solid var(--linea);overflow:hidden}
+.meter span{display:block;height:100%;width:0;background:var(--taupe);border-radius:999px}
+.meter.alto span{background:var(--terracota)}
