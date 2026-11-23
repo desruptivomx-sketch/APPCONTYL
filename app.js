@@ -624,6 +624,7 @@ function renderResumen(){
   renderCalendar();
   const m = $("rs-mes").value, byMes = p => !m || p.mes === m;
   crossTable($("sum-semana"), "semana", lista("semana").map(o => o.valor), "tipo", lista("tipo").map(o => o.valor), byMes);
+  crossTable($("sum-pilar-tipo"), "pilar", lista("pilar").map(o => o.valor), "tipo", lista("tipo").map(o => o.valor), byMes);
   crossTable($("sum-pilar"), "pilar", lista("pilar").map(o => o.valor), "status", lista("status").map(o => o.valor), byMes);
   crossTable($("sum-mes"), "mes", MESES, "pilar", lista("pilar").map(o => o.valor));
   const d = posts.filter(byMes), si = d.filter(p => p.cumplio === "✔").length, no = d.filter(p => p.cumplio === "✖").length;

@@ -21,7 +21,7 @@
 <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@400;600&family=Nunito+Sans:wght@400;600;700&display=swap" rel="stylesheet">
 <link rel="preload" href="fonts/the-seasons-regular.woff2" as="font" type="font/woff2" crossorigin>
 <link rel="preload" href="fonts/gotham-rounded-light.woff2" as="font" type="font/woff2" crossorigin>
-<link rel="stylesheet" href="styles.css?v=17">
+<link rel="stylesheet" href="styles.css?v=18">
 </head>
 <body>
 <!-- Pantalla de carga: se ve hasta que la app decide si mostrar la entrada o la parrilla -->
@@ -148,6 +148,7 @@
     <div class="toolbar"><div class="left"><label class="label-sm" for="rs-mes">Mes</label><select id="rs-mes"></select></div></div>
     <div class="cards">
       <section class="card"><h3>Posts por semana y tipo</h3><div class="table-wrap"><table class="sum" id="sum-semana"></table></div></section>
+      <section class="card"><h3>Posts por pilar y tipo</h3><div class="table-wrap"><table class="sum" id="sum-pilar-tipo"></table></div></section>
       <section class="card"><h3>Posts por pilar y status</h3><div class="table-wrap"><table class="sum" id="sum-pilar"></table></div></section>
       <section class="card"><h3>Posts por mes y pilar</h3><div class="table-wrap"><table class="sum" id="sum-mes"></table></div></section>
       <section class="card"><h3>¿Cumplió lo esperado?</h3><div id="sum-cumplio" class="kpis"></div></section>
@@ -276,7 +277,7 @@
 
 <div id="print-area" aria-hidden="true"></div>
 <script src="lib/supabase.js"></script>
-<script src="config.js?v=17"></script>
-<script src="app.js?v=17"></script>
+<script src="config.js?v=18"></script>
+<script src="app.js?v=18"></script>
 </body>
 </html>
