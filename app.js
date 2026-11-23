@@ -450,12 +450,17 @@ function feedList(){
   const m = $("ff-mes").value, s = $("ff-status").value;
   return posts.filter(p => (!m || p.mes === m || (!p.mes && mesDe(p.fecha) === m)) && (!s || p.status === s));
 }
-const feedOrder = list => list.filter(p => p.tipo !== "Historia").sort((a, b) => (a.orden ?? 0) - (b.orden ?? 0) || String(b.fecha || "").localeCompare(String(a.fecha || "")));
+// Solo lo que aparece en la cuadrícula de Instagram: historias y otras plataformas quedan fuera
+const FUERA_DEL_FEED = ["Historia", "Pin", "TikTok", "Video YT", "Blog"];
+const enFeed = p => !FUERA_DEL_FEED.includes(p.tipo);
+const feedOrder = list => list.filter(enFeed).sort((a, b) => (a.orden ?? 0) - (b.orden ?? 0) || String(b.fecha || "").localeCompare(String(a.fecha || "")));
 function renderFeed(){
   const list = feedList();
   const feed = feedOrder(list);
   const st = list.filter(p => p.tipo === "Historia").sort((a, b) => String(a.fecha || "").localeCompare(String(b.fecha || "")));
   $("st-feed").textContent = feed.length; $("st-img").textContent = feed.filter(p => p.imagen_path).length; $("st-story").textContent = st.length;
+  const otras = list.filter(p => FUERA_DEL_FEED.includes(p.tipo) && p.tipo !== "Historia").length;
+  $("st-otras").textContent = otras ? `${otras} de otras plataformas (Pin, TikTok, YouTube, Blog) no se muestran en la cuadrícula; están en la Parrilla y el Calendario.` : "";
   const g = $("feed-grid"); g.innerHTML = "";
   if (!feed.length) g.innerHTML = '<div class="empty-state">No hay posts para este filtro. Agrégalos en la pestaña Parrilla.</div>';
   const frag = document.createDocumentFragment();
