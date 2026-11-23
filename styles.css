@@ -137,3 +137,76 @@ dialog::backdrop{background:rgba(48,48,48,.35)}
 .dlg-body h3{font-family:var(--display);font-weight:600;margin:0}
 @media (prefers-reduced-motion:no-preference){.tile{transition:transform .15s}.tile:hover{transform:scale(.985)}}
 @media (max-width:600px){.top .sub{display:none}.avatar{width:60px;height:60px;font-size:16px}.profile h2{font-size:20px}}
+
+/* ===== v2: editor compartido, móvil y app instalable ===== */
+html,body{height:auto;min-height:100%}
+body{-webkit-tap-highlight-color:transparent;overscroll-behavior-y:none}
+.mob-only{display:none}
+.top{padding-top:max(12px,env(safe-area-inset-top));padding-left:max(16px,env(safe-area-inset-left));padding-right:max(16px,env(safe-area-inset-right))}
+.tabs button{display:flex;align-items:center;gap:6px}
+.tabs svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
+.banner.offline{background:#EDE6E2;color:var(--chocolate)}
+.feed-main{max-width:760px;margin:0 auto}
+
+/* Editor */
+.scrim{position:fixed;inset:0;background:rgba(48,48,48,.35);z-index:40}
+.editor{position:fixed;top:0;right:0;bottom:0;width:min(420px,100%);background:var(--marfil);border-left:1px solid var(--rosa);z-index:50;display:flex;flex-direction:column;box-shadow:-8px 0 30px rgba(48,48,48,.12)}
+.ed-head{display:flex;align-items:center;gap:10px;padding:12px 14px;padding-top:max(12px,env(safe-area-inset-top));border-bottom:1px solid var(--linea);background:var(--marfil)}
+.ed-head h3{flex:1;font-family:var(--display);font-weight:600;font-size:19px;margin:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.ed-body{flex:1;overflow-y:auto;-webkit-overflow-scrolling:touch;padding:14px;padding-bottom:max(24px,env(safe-area-inset-bottom));display:flex;flex-direction:column;gap:12px}
+.ed-body label{display:flex;flex-direction:column;gap:4px;font-size:12px;color:var(--chocolate)}
+.ed-body label>*{width:100%}
+.ed-body .preview{flex:none;display:block;width:100%;max-width:320px;align-self:center;aspect-ratio:4/5;min-height:240px;height:auto}
+.ed-body .preview img{width:100%;height:100%;object-fit:cover;display:block}
+.move-ctl{display:inline-flex;align-items:center;gap:6px;flex-wrap:wrap;margin-left:auto}
+.ed-body .del{align-self:flex-start;margin-top:8px;border-color:transparent}
+@media (prefers-reduced-motion:no-preference){.editor{animation:slidein .18s ease-out}@keyframes slidein{from{transform:translateX(24px);opacity:.6}to{transform:none;opacity:1}}}
+
+/* Tarjetas (móvil) */
+.cards-list{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:10px}
+.pcard{display:flex;gap:12px;align-items:stretch;background:#fff;border:1px solid var(--linea);border-radius:10px;padding:10px;text-align:left;width:100%;color:var(--gris)}
+.pcard .pthumb{width:64px;flex:none;aspect-ratio:4/5;border-radius:6px;background:var(--marfil) center/cover no-repeat;border:1px dashed var(--rosa);display:grid;place-items:center;color:var(--taupe);font-size:20px}
+.pcard .pthumb.has{border:0}
+.pcard .pbody{flex:1;min-width:0;display:flex;flex-direction:column;gap:5px}
+.pcard .pdate{font-weight:700;color:var(--chocolate);font-size:13px}
+.pcard .pcopy{font-size:14px;overflow:hidden;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical}
+.pcard .pcopy.empty{color:var(--taupe)}
+.pchips{display:flex;flex-wrap:wrap;gap:4px}
+.pchips .chip{font-size:11px;font-weight:700;padding:2px 8px}
+.mfilters{display:flex;flex-direction:column;gap:8px;margin-bottom:10px}
+.mf-row{display:flex;gap:6px;overflow-x:auto;padding-bottom:2px;scrollbar-width:none}
+.mf-row::-webkit-scrollbar{display:none}
+.mf-row select{flex:none;max-width:170px;border-radius:999px;padding:6px 10px;font-size:14px}
+.mf-row select.on{background:var(--terracota);color:var(--arena);border-color:var(--terracota)}
+
+/* Celular */
+@media (max-width:760px){
+  .desk-only{display:none !important}
+  .mob-only{display:revert}
+  ul.mob-only{display:flex}
+  .mfilters.mob-only{display:flex}
+  input,select,textarea{font-size:16px} /* evita el zoom automático de iOS */
+  .top{padding-bottom:10px}
+  .top .sub,.who #who-email{display:none}
+  .tabs{position:fixed;left:0;right:0;bottom:0;z-index:30;background:var(--marfil);border-top:1px solid var(--linea);justify-content:space-around;gap:0;padding:6px 4px;padding-bottom:max(6px,env(safe-area-inset-bottom))}
+  .tabs button{flex:1;flex-direction:column;gap:2px;color:var(--taupe);font-size:11px;padding:4px 2px;border-radius:8px}
+  .tabs button[aria-selected=true]{background:transparent;color:var(--terracota)}
+  .tabs svg{width:22px;height:22px}
+  .view{padding:12px 12px calc(84px + env(safe-area-inset-bottom))}
+  .toolbar .right:empty{display:none}
+  #view-parrilla .toolbar{position:sticky;top:0;z-index:5;background:var(--arena);padding:6px 0;margin:0}
+  .editor{width:100%;border-left:0}
+  .ed-body .preview{max-width:260px;min-height:200px}
+  .move-ctl{margin-left:0}
+  .feed-grid{gap:2px;margin:0 -12px}
+  .tile .meta{padding:4px;font-size:10px}
+  .tile .meta .chip{padding:1px 6px}
+  .tile .ph .t{font-size:12px}
+  .tile .ph .label-sm{font-size:9px}
+  .tile .type{width:18px;height:18px;top:5px;right:5px}
+  .profile{gap:14px}
+  .cards{grid-template-columns:1fr}
+  .card{padding:12px}
+  dialog{width:calc(100% - 16px)}
+}
+@media (display-mode:standalone){.who .link{font-size:12px}}

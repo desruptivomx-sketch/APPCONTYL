@@ -1,0 +1,21 @@
+{
+  "name": "Parrilla YUC'ATÅLOVE",
+  "short_name": "Parrilla YL",
+  "description": "Parrilla de contenido y vista del feed de Instagram de YUC'ATÅLOVE",
+  "lang": "es-MX",
+  "start_url": "./#parrilla",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#FAF4EE",
+  "theme_color": "#AB391B",
+  "icons": [
+    { "src": "icons/icon-192.png", "sizes": "192x192", "type": "image/png" },
+    { "src": "icons/icon-512.png", "sizes": "512x512", "type": "image/png" },
+    { "src": "icons/maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ],
+  "shortcuts": [
+    { "name": "Feed", "url": "./#feed", "icons": [{ "src": "icons/icon-192.png", "sizes": "192x192" }] },
+    { "name": "Resumen", "url": "./#resumen", "icons": [{ "src": "icons/icon-192.png", "sizes": "192x192" }] }
+  ]
+}

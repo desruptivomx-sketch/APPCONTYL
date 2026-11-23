@@ -1,4 +1,4 @@
-/* Parrilla YUC'ATÅLOVE — tabla + feed + resumen sobre Supabase */
+/* Parrilla YUC'ATÅLOVE — tabla + feed + resumen sobre Supabase (v2: móvil, app instalable, imágenes optimizadas) */
 (function(){
 "use strict";
 const CFG = window.PARRILLA_CONFIG;
@@ -7,6 +7,15 @@ const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt
 
 if (!window.supabase || !CFG) { document.body.innerHTML = '<p style="padding:24px;font-family:sans-serif">No se pudo cargar la página. Revisa tu conexión y recarga.</p>'; return; }
 const sb = window.supabase.createClient(CFG.supabaseUrl, CFG.supabaseKey, { auth: { persistSession: true, detectSessionInUrl: true } });
+
+/* ---------- App instalable ---------- */
+if ("serviceWorker" in navigator) window.addEventListener("load", () => navigator.serviceWorker.register("sw.js").catch(() => {}));
+let installEvt = null;
+window.addEventListener("beforeinstallprompt", e => { e.preventDefault(); installEvt = e; $("btn-install").classList.remove("hidden"); });
+$("btn-install").addEventListener("click", async () => { if (!installEvt) return; installEvt.prompt(); await installEvt.userChoice; installEvt = null; $("btn-install").classList.add("hidden"); });
+function netState(){ $("offline").classList.toggle("hidden", navigator.onLine); }
+window.addEventListener("online", () => { netState(); if (user) loadPosts(); });
+window.addEventListener("offline", netState);
 
 /* ---------- Listas ---------- */
 const MESES = ["Enero","Febrero","Marzo","Abril","Mayo","Junio","Julio","Agosto","Septiembre","Octubre","Noviembre","Diciembre"];
@@ -21,6 +30,7 @@ let opciones = { tipo:[], pilar:[], status:[], semana:[] };
 const lista = name => STATIC[name] || opciones[name] || [];
 const colorDe = (name, v) => (lista(name).find(o => o.valor === v) || {}).color || null;
 function textOn(hex){ if(!hex) return "#303030"; const n=parseInt(hex.slice(1),16); const r=n>>16,g=(n>>8)&255,b=n&255; return (0.299*r+0.587*g+0.114*b) > 150 ? "#303030" : "#FAF4EE"; }
+const chip = (name, v) => { if (!v) return ""; const c = colorDe(name, v) || "#F6F6F4"; return `<span class="chip" style="background:${c};color:${textOn(c)}">${esc(v)}</span>`; };
 
 const COLS = [
   {k:"fecha", label:"Fecha", type:"date", w:140, sticky:true},
@@ -38,11 +48,45 @@ const COLS = [
   {k:"contenido", label:"Contenido", type:"long", w:200},
   {k:"cumplio", label:"¿Cumplió?", type:"list", list:"cumplio", w:96}
 ];
+const isMobile = () => window.matchMedia("(max-width:760px)").matches;
 
 /* ---------- Estado ---------- */
 let user = null, posts = [], filters = {}, sortKey = "fecha", sortDir = 1, view = "parrilla";
 let pendingRender = false, current = null, pendingFile = null, pendingUrl = null, channel = null;
-const urlCache = new Map(); // path -> {url, exp}
+
+/* ---------- Imágenes: URLs firmadas con caché y miniaturas ---------- */
+const URL_KEY = "parrilla-urls-v1";
+const urlCache = new Map((() => { try { return JSON.parse(sessionStorage.getItem(URL_KEY) || "[]"); } catch (_) { return []; } })());
+function persistUrls(){ try { sessionStorage.setItem(URL_KEY, JSON.stringify([...urlCache].slice(-400))); } catch (_) {} }
+const thumbOf = p => p ? p.replace(/(\.[a-z0-9]+)$/i, "_t$1") : p;
+async function signedUrls(paths){
+  const now = Date.now();
+  const need = [...new Set(paths.filter(p => p && !(urlCache.get(p) && urlCache.get(p).exp > now + 120000)))];
+  if (!need.length) return;
+  for (let i = 0; i < need.length; i += 100) {
+    const { data, error } = await sb.storage.from(CFG.bucket).createSignedUrls(need.slice(i, i + 100), 3600);
+    if (error) return;
+    (data || []).forEach(r => urlCache.set(r.path, { url: r.signedUrl || "", exp: now + 3500000 }));
+  }
+  persistUrls();
+}
+const urlOf = p => (p && urlCache.get(p)) ? urlCache.get(p).url : "";
+const thumbUrl = p => urlOf(thumbOf(p)) || urlOf(p); // miniatura si existe; si no, la imagen completa
+const allImagePaths = list => list.flatMap(p => p.imagen_path ? [p.imagen_path, thumbOf(p.imagen_path)] : []);
+
+// Reduce la imagen antes de subirla: Instagram la muestra a 1080 px, así que 1440 px basta y pesa mucho menos.
+async function compress(file, maxSide, quality, onlyType){
+  try {
+    const bmp = await createImageBitmap(file, { imageOrientation: "from-image" });
+    const scale = Math.min(1, maxSide / Math.max(bmp.width, bmp.height));
+    const w = Math.round(bmp.width * scale), h = Math.round(bmp.height * scale);
+    const cv = document.createElement("canvas"); cv.width = w; cv.height = h;
+    cv.getContext("2d").drawImage(bmp, 0, 0, w, h); bmp.close && bmp.close();
+    const tryType = t => new Promise(r => cv.toBlob(b => r(b && b.type === t ? b : null), t, quality));
+    const blob = onlyType ? await tryType(onlyType) : ((await tryType("image/webp")) || (await tryType("image/jpeg")));
+    return blob ? { blob, ext: blob.type === "image/webp" ? "webp" : "jpg" } : null;
+  } catch (_) { return null; }
+}
 
 /* ---------- Utilidades ---------- */
 function banner(t){ const b=$("banner"); b.textContent=t||""; b.classList.toggle("hidden", !t); }
@@ -50,27 +94,18 @@ let saveTimer=null;
 function saved(t, warn){ const m=$("save-msg"); m.textContent=t||""; m.classList.toggle("warn",!!warn); clearTimeout(saveTimer); if(t && !warn) saveTimer=setTimeout(()=>{m.textContent=""},2500); }
 function errMsg(e){
   const m = (e && (e.message || e.error_description)) || "";
-  if (/row-level security|permission|not allowed|401|403/i.test(m)) return "Tu correo no tiene permiso. Pide que te agreguen en Ajustes → Equipo.";
-  if (/Failed to fetch|NetworkError|network/i.test(m)) return "Sin conexión. Revisa tu internet e intenta de nuevo.";
+  if (!navigator.onLine || /Failed to fetch|NetworkError|network|Load failed/i.test(m)) return "Sin conexión. Revisa tu internet e intenta de nuevo.";
+  if (/row-level security|permission|not allowed|401|403|Unauthorized/i.test(m)) return "Tu correo no tiene permiso. Pide que te agreguen en Ajustes → Equipo.";
+  if (/exceeded the maximum|too large|413/i.test(m)) return "La imagen es demasiado pesada. Usa una de menos de 20 MB.";
   return m || "Algo falló. Intenta de nuevo.";
 }
 const fmtCorto = f => { if(!f) return "Sin fecha"; const [y,m,d]=f.split("-"); return `${+d} ${MESES[+m-1].slice(0,3).toLowerCase()}`; };
 function diaDe(f){ if(!f) return null; const d=new Date(f+"T12:00:00"); return DIAS[(d.getDay()+6)%7]; }
 function mesDe(f){ return f ? MESES[+f.split("-")[1]-1] : null; }
 
-async function signedUrls(paths){
-  const now = Date.now();
-  const need = [...new Set(paths.filter(p => p && !(urlCache.get(p) && urlCache.get(p).exp > now + 60000)))];
-  if (!need.length) return;
-  const { data, error } = await sb.storage.from(CFG.bucket).createSignedUrls(need, 3600);
-  if (error) return;
-  (data||[]).forEach(r => { if (r.signedUrl) urlCache.set(r.path, {url:r.signedUrl, exp: now + 3500000}); });
-}
-const urlOf = p => (p && urlCache.get(p)) ? urlCache.get(p).url : "";
-
 /* ---------- Acceso ---------- */
 let signupMode = false;
-function showAuth(){ $("app").classList.add("hidden"); $("recover").classList.add("hidden"); $("auth").classList.remove("hidden"); }
+function showAuth(){ $("app").classList.add("hidden"); $("recover").classList.add("hidden"); closeEditor(); $("auth").classList.remove("hidden"); }
 $("a-toggle").addEventListener("click", () => {
   signupMode = !signupMode;
   $("a-submit").textContent = signupMode ? "Crear mi acceso" : "Entrar";
@@ -100,7 +135,7 @@ $("auth-form").addEventListener("submit", async e => {
 });
 $("a-reset").addEventListener("click", async () => {
   const email = $("a-email").value.trim(), msg = $("a-msg");
-  if (!email) { msg.textContent = "Escribe tu correo arriba y vuelve a dar clic aquí."; msg.classList.add("warn"); return; }
+  if (!email) { msg.textContent = "Escribe tu correo arriba y vuelve a tocar aquí."; msg.classList.add("warn"); return; }
   const { error } = await sb.auth.resetPasswordForEmail(email, { redirectTo: location.origin + location.pathname });
   msg.classList.toggle("warn", !!error);
   msg.textContent = error ? errMsg(error) : "Te enviamos un correo para crear una contraseña nueva.";
@@ -127,10 +162,10 @@ async function start(){
   if (!$("recover").classList.contains("hidden")) return;
   $("auth").classList.add("hidden"); $("app").classList.remove("hidden");
   $("who-email").textContent = user.email;
-  banner("");
+  banner(""); netState();
   setView(location.hash.replace("#","") || "parrilla");
   const { data: yo, error: e1 } = await sb.from("miembros").select("email").limit(1);
-  if (e1 || !yo || !yo.length) { banner("Tu correo (" + user.email + ") todavía no está en el equipo. Pide a alguien del equipo que lo agregue en Ajustes → Equipo y recarga la página."); }
+  if (e1 || !yo || !yo.length) banner("Tu correo (" + user.email + ") todavía no está en el equipo. Pide a alguien del equipo que lo agregue en Ajustes → Equipo y vuelve a abrir la app.");
   await Promise.all([loadOpciones(), loadPosts(), loadTeam()]);
   subscribe();
 }
@@ -145,21 +180,23 @@ async function loadPosts(){
   const { data, error } = await sb.from("posts").select("*").order("fecha", { ascending: true, nullsFirst: false });
   if (error) { saved(errMsg(error), true); return; }
   posts = data || [];
-  await signedUrls(posts.map(p => p.imagen_path));
-  renderAll();
+  renderAll();                       // pinta de inmediato
+  await signedUrls(allImagePaths(posts));
+  renderAll();                       // y luego con imágenes
 }
 function subscribe(){
   if (channel) sb.removeChannel(channel);
   channel = sb.channel("parrilla")
     .on("postgres_changes", { event: "*", schema: "public", table: "posts" }, async payload => {
       if (payload.eventType === "DELETE") posts = posts.filter(p => p.id !== payload.old.id);
-      else { const n = payload.new; const i = posts.findIndex(p => p.id === n.id); if (i >= 0) posts[i] = n; else posts.push(n); if (n.imagen_path) await signedUrls([n.imagen_path]); }
-      if (current) { const c = posts.find(p => p.id === current.id); current = c || null; }
+      else { const n = payload.new; const i = posts.findIndex(p => p.id === n.id); if (i >= 0) posts[i] = n; else posts.push(n); if (n.imagen_path) await signedUrls(allImagePaths([n])); }
+      if (current && !editorDirty) { const c = posts.find(p => p.id === current.id); if (c) current = c; }
       renderAll(true);
     })
     .on("postgres_changes", { event: "*", schema: "public", table: "opciones" }, () => loadOpciones())
     .subscribe();
 }
+document.addEventListener("visibilitychange", () => { if (document.visibilityState === "visible" && user) loadPosts(); });
 
 /* ---------- Vistas ---------- */
 const VIEWS = ["parrilla","feed","resumen","ajustes"];
@@ -168,7 +205,7 @@ function setView(v){
   view = v;
   VIEWS.forEach(x => { $("view-"+x).classList.toggle("hidden", x !== v); $("tab-"+x).setAttribute("aria-selected", String(x === v)); });
   if (location.hash !== "#"+v) history.replaceState(null, "", "#"+v);
-  renderAll();
+  renderAll(); window.scrollTo(0, 0);
 }
 document.querySelectorAll(".tabs button").forEach(b => b.addEventListener("click", () => setView(b.dataset.view)));
 window.addEventListener("hashchange", () => setView(location.hash.replace("#","")));
@@ -182,6 +219,7 @@ function renderAll(fromRemote){
   if (view === "ajustes") { renderOpts(); renderTeam(); }
 }
 document.addEventListener("focusout", () => setTimeout(() => { if (pendingRender && !$("tbody").contains(document.activeElement)) renderAll(); }, 0));
+let rz; window.addEventListener("resize", () => { clearTimeout(rz); rz = setTimeout(() => { if (view === "parrilla") renderTable(); }, 200); });
 
 /* ---------- Parrilla ---------- */
 function optionsHtml(name, value, withBlank){
@@ -201,12 +239,20 @@ function renderHead(){
   }).join("") + "<th></th>";
   $("thead").innerHTML = `<tr class="h1">${h1}</tr><tr class="h2">${h2}</tr>`;
   $("thead").querySelectorAll("[data-sort]").forEach(th => th.addEventListener("click", () => { const k = th.dataset.sort; if (sortKey === k) sortDir = -sortDir; else { sortKey = k; sortDir = 1; } renderTable(); }));
-  $("thead").querySelectorAll("[data-f]").forEach(el => el.addEventListener(el.tagName === "INPUT" ? "input" : "change", () => { filters[el.dataset.f] = el.value; renderBody(); if (el.tagName === "INPUT") { /* keep focus */ } }));
+  $("thead").querySelectorAll("[data-f]").forEach(el => el.addEventListener(el.tagName === "INPUT" ? "input" : "change", () => { filters[el.dataset.f] = el.value; renderBody(); }));
 }
+function renderMobileFilters(){
+  const defs = [["mes","Mes","mes"],["semana","Semana","semana"],["status","Status","status"],["tipo","Tipo","tipo"],["pilar","Pilar","pilar"],["cumplio","¿Cumplió?","cumplio"]];
+  $("mf-row").innerHTML = defs.map(([k, label, l]) => `<select data-mf="${k}" class="${filters[k] ? "on" : ""}" aria-label="Filtrar ${label}"><option value="">${label}: todos</option>${lista(l).map(o => `<option value="${esc(o.valor)}"${filters[k] === o.valor ? " selected" : ""}>${esc(o.valor)}</option>`).join("")}<option value="__vacio"${filters[k] === "__vacio" ? " selected" : ""}>${label}: vacío</option></select>`).join("");
+  if (document.activeElement !== $("mf-q")) $("mf-q").value = filters.__q || "";
+}
+$("mf-row").addEventListener("change", e => { const s = e.target.closest("[data-mf]"); if (!s) return; filters[s.dataset.mf] = s.value; s.classList.toggle("on", !!s.value); renderBody(); });
+let qT; $("mf-q").addEventListener("input", () => { clearTimeout(qT); qT = setTimeout(() => { filters.__q = $("mf-q").value; renderBody(); }, 150); });
 function pass(p){
   const hoy = new Date().toISOString().slice(0,10);
   for (const [k, v] of Object.entries(filters)) {
     if (!v) continue;
+    if (k === "__q") { const q = v.toLowerCase(); if (!["copy","caption","comentarios","inspo","contenido","pilar","tipo"].some(f => String(p[f] || "").toLowerCase().includes(q))) return false; continue; }
     const val = p[k];
     if (v === "__vacio") { if (val) return false; continue; }
     if (k === "fecha") { if (v === "__futuro" && !(val && val >= hoy)) return false; if (v === "__pasado" && !(val && val < hoy)) return false; continue; }
@@ -229,7 +275,7 @@ function sortedRows(){
   });
   return rows;
 }
-function renderTable(){ renderHead(); renderBody(); }
+function renderTable(){ if (isMobile()) renderMobileFilters(); else renderHead(); renderBody(); }
 function cellHtml(p, c){
   const v = p[c.k];
   if (c.type === "date") return `<input type="date" data-k="fecha" value="${esc(v || "")}" aria-label="Fecha">`;
@@ -238,7 +284,7 @@ function cellHtml(p, c){
     const style = col ? `background:${col};color:${textOn(col)}` : "";
     return `<select data-k="${c.k}" class="${v && col ? "chip-sel" : ""}" style="${style}" aria-label="${esc(c.label)}">${optionsHtml(c.list, v, true)}</select>`;
   }
-  if (c.type === "thumb") return v && urlOf(v) ? `<button class="icon-btn" data-img="${p.id}" title="Ver en el feed"><img class="thumb" src="${esc(urlOf(v))}" alt=""></button>` : `<button class="icon-btn" data-img="${p.id}" title="Subir imagen" aria-label="Subir imagen">＋</button>`;
+  if (c.type === "thumb") { const u = thumbUrl(v); return v && u ? `<button class="icon-btn" data-img="${p.id}" title="Ver o cambiar imagen"><img class="thumb" src="${esc(u)}" alt="" loading="lazy" decoding="async"></button>` : `<button class="icon-btn" data-img="${p.id}" title="Subir imagen" aria-label="Subir imagen">＋</button>`; }
   if (c.type === "long") {
     const isLink = /^https?:\/\/\S+$/.test(String(v || "").trim());
     if (isLink) return `<div style="display:flex;align-items:flex-start"><button class="txt" data-long="${c.k}" title="Editar">${esc(v)}</button><a class="icon-btn" href="${esc(String(v).trim())}" target="_blank" rel="noopener" title="Abrir enlace" aria-label="Abrir enlace">↗</a></div>`;
@@ -249,9 +295,24 @@ function cellHtml(p, c){
 function renderBody(){
   const rows = sortedRows();
   $("count").textContent = `${rows.length} de ${posts.length} posts`;
-  $("tbody").innerHTML = rows.length ? rows.map(p => `<tr data-id="${p.id}">${COLS.map(c => `<td class="c-${c.k}${c.sticky ? " sticky" : ""}">${cellHtml(p, c)}</td>`).join("")}<td class="c-acc"><button class="icon-btn" data-del="${p.id}" title="Eliminar post" aria-label="Eliminar post">✕</button></td></tr>`).join("")
-    : `<tr><td colspan="${COLS.length + 1}" style="padding:28px;text-align:center;color:var(--chocolate)">${posts.length ? "Ningún post coincide con los filtros." : "Todavía no hay posts. Da clic en “+ Agregar post”."}</td></tr>`;
+  const emptyMsg = posts.length ? "Ningún post coincide con los filtros." : "Todavía no hay posts. Toca “+ Agregar post”.";
+  if (isMobile()) {
+    $("cards").innerHTML = rows.length ? rows.map(p => {
+      const u = thumbUrl(p.imagen_path);
+      return `<li><button class="pcard" data-open="${p.id}" type="button">
+        <span class="pthumb${u ? " has" : ""}" style="${u ? `background-image:url('${esc(u)}')` : ""}">${u ? "" : "＋"}</span>
+        <span class="pbody">
+          <span class="pdate">${esc(p.dia ? p.dia + " · " : "")}${fmtCorto(p.fecha)}${p.semana ? " · " + esc(p.semana) : ""}</span>
+          <span class="pcopy${p.copy ? "" : " empty"}">${esc(p.copy || "Sin copy")}</span>
+          <span class="pchips">${chip("tipo", p.tipo)}${chip("pilar", p.pilar)}${chip("status", p.status)}${chip("cumplio", p.cumplio)}</span>
+        </span></button></li>`;
+    }).join("") : `<li class="empty-state">${emptyMsg}</li>`;
+    return;
+  }
+  $("tbody").innerHTML = rows.length ? rows.map(p => `<tr data-id="${p.id}">${COLS.map(c => `<td class="c-${c.k}${c.sticky ? " sticky" : ""}">${cellHtml(p, c)}</td>`).join("")}<td class="c-acc"><button class="icon-btn" data-edit="${p.id}" title="Abrir editor" aria-label="Abrir editor">✎</button><button class="icon-btn" data-del="${p.id}" title="Eliminar post" aria-label="Eliminar post">✕</button></td></tr>`).join("")
+    : `<tr><td colspan="${COLS.length + 1}" style="padding:28px;text-align:center;color:var(--chocolate)">${emptyMsg}</td></tr>`;
 }
+$("cards").addEventListener("click", e => { const b = e.target.closest("[data-open]"); if (!b) return; const p = posts.find(x => x.id === b.dataset.open); if (p) openEditor(p); });
 $("tbody").addEventListener("change", e => {
   const el = e.target, tr = el.closest("tr"); if (!tr || !el.dataset.k) return;
   const id = tr.dataset.id, k = el.dataset.k, v = el.value || null;
@@ -262,12 +323,12 @@ $("tbody").addEventListener("change", e => {
   savePatch(id, patch, k === "fecha" && (patch.dia || patch.mes));
 });
 $("tbody").addEventListener("click", e => {
-  const long = e.target.closest("[data-long]"), del = e.target.closest("[data-del]"), img = e.target.closest("[data-img]");
+  const long = e.target.closest("[data-long]"), del = e.target.closest("[data-del]"), img = e.target.closest("[data-img]"), ed = e.target.closest("[data-edit]");
   const tr = e.target.closest("tr"); if (!tr) return;
   const p = posts.find(x => x.id === tr.dataset.id); if (!p) return;
   if (long) editLong(p, long.dataset.long);
   else if (del) confirmDelete(p);
-  else if (img) { setView("feed"); openPanel(p); }
+  else if (img || ed) openEditor(p);
 });
 async function savePatch(id, patch, rerender){
   const p = posts.find(x => x.id === id); if (p) Object.assign(p, patch);
@@ -280,7 +341,7 @@ function editLong(p, k){
   const c = COLS.find(x => x.k === k), d = $("dlg");
   $("dlg-title").textContent = `${c.label}${p.fecha ? " · " + fmtCorto(p.fecha) : ""}`;
   $("dlg-text").value = p[k] || "";
-  d.onclose = () => { if (d.returnValue === "ok") { const v = $("dlg-text").value; if (v !== (p[k] || "")) { savePatch(p.id, { [k]: v || null }, true); } } };
+  d.onclose = () => { if (d.returnValue === "ok") { const v = $("dlg-text").value; if (v !== (p[k] || "")) savePatch(p.id, { [k]: v || null }, true); } };
   d.returnValue = ""; d.showModal(); $("dlg-text").focus();
 }
 function confirmDelete(p){
@@ -290,35 +351,36 @@ function confirmDelete(p){
     if (d.returnValue !== "ok") return;
     const { error } = await sb.from("posts").delete().eq("id", p.id);
     if (error) { saved(errMsg(error), true); return; }
-    if (p.imagen_path) sb.storage.from(CFG.bucket).remove([p.imagen_path]);
-    posts = posts.filter(x => x.id !== p.id); if (current && current.id === p.id) closePanel(); renderAll(); saved("Post eliminado");
+    if (p.imagen_path) sb.storage.from(CFG.bucket).remove([p.imagen_path, thumbOf(p.imagen_path)]);
+    posts = posts.filter(x => x.id !== p.id); if (current && current.id === p.id) closeEditor(true); renderAll(); saved("Post eliminado");
   };
   d.returnValue = ""; d.showModal();
 }
-async function addPost(extra){
+async function addPost(){
   const minOrden = posts.reduce((m, p) => Math.min(m, p.orden ?? 0), 0);
-  const row = Object.assign({ status: (opciones.status[0] || {}).valor || "Pendiente", orden: minOrden - 1 }, extra || {});
+  const row = { status: (opciones.status[0] || {}).valor || "Pendiente", orden: minOrden - 1 };
   saved("Creando…");
   const { data, error } = await sb.from("posts").insert(row).select().single();
-  if (error) { saved(errMsg(error), true); return null; }
+  if (error) { saved(errMsg(error), true); banner(errMsg(error)); return null; }
   if (!posts.find(p => p.id === data.id)) posts.push(data);
-  saved("Post creado"); renderAll();
-  return data;
+  saved("Post creado"); return data;
 }
 $("btn-add").addEventListener("click", async () => {
-  const p = await addPost();
-  if (p) { filters = {}; sortKey = "created_at"; sortDir = -1; renderTable(); const f = $("tbody").querySelector(`tr[data-id="${p.id}"] input[type=date]`); if (f) f.focus(); }
+  const p = await addPost(); if (!p) return;
+  if (isMobile()) { renderBody(); openEditor(p); return; }
+  filters = {}; sortKey = "created_at"; sortDir = -1; renderTable();
+  const f = $("tbody").querySelector(`tr[data-id="${p.id}"] input[type=date]`); if (f) f.focus();
 });
-$("btn-clear").addEventListener("click", () => { filters = {}; sortKey = "fecha"; sortDir = 1; renderTable(); });
+$("btn-clear").addEventListener("click", () => { filters = {}; sortKey = "fecha"; sortDir = 1; $("mf-q").value = ""; renderTable(); });
 
 /* ---------- Feed ---------- */
 function fillSelects(){
-  const fm = $("ff-mes").value, fs = $("ff-status").value, rm = $("rs-mes").value;
+  const keep = id => $(id).value;
+  const fm = keep("ff-mes"), fs = keep("ff-status"), rm = keep("rs-mes");
   $("ff-mes").innerHTML = '<option value="">Todos</option>' + MESES.map(m => `<option>${m}</option>`).join("");
   $("rs-mes").innerHTML = '<option value="">Todos</option>' + MESES.map(m => `<option>${m}</option>`).join("");
   $("ff-status").innerHTML = '<option value="">Todos</option>' + lista("status").map(o => `<option>${esc(o.valor)}</option>`).join("");
   $("ff-mes").value = fm; $("ff-status").value = fs; $("rs-mes").value = rm;
-  ["tipo","pilar","status"].forEach(n => { const s = $("p-"+n), v = s.value; s.innerHTML = optionsHtml(n, v, true); s.value = v; });
   $("op-color").innerHTML = PALETA.map(([h, n]) => `<option value="${h}">${n}</option>`).join("");
 }
 $("ff-mes").addEventListener("change", renderFeed); $("ff-status").addEventListener("change", renderFeed);
@@ -330,105 +392,148 @@ function feedList(){
   const m = $("ff-mes").value, s = $("ff-status").value;
   return posts.filter(p => (!m || p.mes === m || (!p.mes && mesDe(p.fecha) === m)) && (!s || p.status === s));
 }
+const feedOrder = list => list.filter(p => p.tipo !== "Historia").sort((a, b) => (a.orden ?? 0) - (b.orden ?? 0) || String(b.fecha || "").localeCompare(String(a.fecha || "")));
 function renderFeed(){
   const list = feedList();
-  const feed = list.filter(p => p.tipo !== "Historia").sort((a, b) => (a.orden ?? 0) - (b.orden ?? 0) || String(b.fecha || "").localeCompare(String(a.fecha || "")));
+  const feed = feedOrder(list);
   const st = list.filter(p => p.tipo === "Historia").sort((a, b) => String(a.fecha || "").localeCompare(String(b.fecha || "")));
   $("st-feed").textContent = feed.length; $("st-img").textContent = feed.filter(p => p.imagen_path).length; $("st-story").textContent = st.length;
   const g = $("feed-grid"); g.innerHTML = "";
   if (!feed.length) g.innerHTML = '<div class="empty-state">No hay posts para este filtro. Agrégalos en la pestaña Parrilla.</div>';
+  const frag = document.createDocumentFragment();
   feed.forEach(p => {
-    const b = document.createElement("button"); b.type = "button"; b.draggable = true; b.dataset.id = p.id;
-    const src = urlOf(p.imagen_path);
+    const b = document.createElement("button"); b.type = "button"; b.dataset.id = p.id;
+    b.draggable = !isMobile();
+    const src = thumbUrl(p.imagen_path);
     b.className = "tile" + (src ? "" : " empty") + (current && current.id === p.id ? " sel" : "");
     b.setAttribute("aria-label", `${p.tipo || "Post"} del ${fmtCorto(p.fecha)}: ${p.copy || "sin copy"}`);
     const st = p.status || "", sc = colorDe("status", st) || "#F6F6F4";
-    b.innerHTML = (src ? `<img src="${esc(src)}" alt="">` : `<div class="ph"><div class="label-sm">${esc(p.pilar || "")}</div><div class="t">${esc(p.copy || p.tipo || "Post")}</div><div class="u">Subir imagen</div></div>`)
+    b.innerHTML = (src ? `<img src="${esc(src)}" alt="" loading="lazy" decoding="async">` : `<div class="ph"><div class="label-sm">${esc(p.pilar || "")}</div><div class="t">${esc(p.copy || p.tipo || "Post")}</div><div class="u">Subir imagen</div></div>`)
       + (ICON[p.tipo] ? ICON[p.tipo](src ? "#fff" : "#674E4A") : "")
       + `<div class="meta"><span class="chip date">${fmtCorto(p.fecha)}</span>${st ? `<span class="chip" style="background:${sc};color:${textOn(sc)}">${esc(st)}</span>` : ""}</div>`;
-    b.addEventListener("click", () => openPanel(p));
-    b.addEventListener("dragstart", e => { e.dataTransfer.setData("text/plain", p.id); e.dataTransfer.effectAllowed = "move"; });
-    b.addEventListener("dragover", e => { e.preventDefault(); b.classList.add("drag-over"); });
-    b.addEventListener("dragleave", () => b.classList.remove("drag-over"));
-    b.addEventListener("drop", e => { e.preventDefault(); b.classList.remove("drag-over"); const from = e.dataTransfer.getData("text/plain"); if (from && from !== p.id) moveTo(from, p.id, feed); });
-    g.appendChild(b);
+    frag.appendChild(b);
   });
-  const sw = $("stories-wrap"), s = $("stories"); s.innerHTML = ""; sw.classList.toggle("hidden", !st.length);
-  st.forEach(p => {
-    const b = document.createElement("button"); b.type = "button"; b.className = "story";
-    const src = urlOf(p.imagen_path);
-    b.innerHTML = `<div class="ring"><span style="${src ? `background-image:url('${esc(src)}')` : ""}"></span></div>${esc(fmtCorto(p.fecha))}`;
-    b.addEventListener("click", () => openPanel(p)); s.appendChild(b);
-  });
+  g.appendChild(frag);
+  const sw = $("stories-wrap"), s = $("stories"); sw.classList.toggle("hidden", !st.length);
+  s.innerHTML = st.map(p => { const src = thumbUrl(p.imagen_path); return `<button type="button" class="story" data-id="${p.id}"><div class="ring"><span style="${src ? `background-image:url('${esc(src)}')` : ""}"></span></div>${esc(fmtCorto(p.fecha))}</button>`; }).join("");
 }
-async function moveTo(fromId, toId, feed){
+$("feed-grid").addEventListener("click", e => { const t = e.target.closest(".tile"); if (!t) return; const p = posts.find(x => x.id === t.dataset.id); if (p) openEditor(p); });
+$("stories").addEventListener("click", e => { const t = e.target.closest(".story"); if (!t) return; const p = posts.find(x => x.id === t.dataset.id); if (p) openEditor(p); });
+$("feed-grid").addEventListener("dragstart", e => { const t = e.target.closest(".tile"); if (t) { e.dataTransfer.setData("text/plain", t.dataset.id); e.dataTransfer.effectAllowed = "move"; } });
+$("feed-grid").addEventListener("dragover", e => { const t = e.target.closest(".tile"); if (t) { e.preventDefault(); t.classList.add("drag-over"); } });
+$("feed-grid").addEventListener("dragleave", e => { const t = e.target.closest(".tile"); if (t) t.classList.remove("drag-over"); });
+$("feed-grid").addEventListener("drop", e => { const t = e.target.closest(".tile"); if (!t) return; e.preventDefault(); t.classList.remove("drag-over"); const from = e.dataTransfer.getData("text/plain"); if (from && from !== t.dataset.id) moveTo(from, t.dataset.id); });
+async function persistOrder(changes){
+  for (const p of changes) { const { error } = await sb.from("posts").update({ orden: p.orden }).eq("id", p.id); if (error) { banner(errMsg(error)); break; } }
+}
+async function moveTo(fromId, toId){
+  const feed = feedOrder(feedList());
   const ids = feed.map(p => p.id), fi = ids.indexOf(fromId), ti = ids.indexOf(toId); if (fi < 0 || ti < 0) return;
   ids.splice(ti, 0, ids.splice(fi, 1)[0]);
   const base = Math.min(...feed.map(p => p.orden ?? 0));
   const changes = [];
   ids.forEach((id, i) => { const p = posts.find(x => x.id === id); if (p.orden !== base + i) { p.orden = base + i; changes.push(p); } });
-  renderFeed();
-  for (const p of changes) { const { error } = await sb.from("posts").update({ orden: p.orden }).eq("id", p.id); if (error) { banner(errMsg(error)); break; } }
+  renderFeed(); await persistOrder(changes);
+}
+async function moveBy(delta){
+  if (!current) return;
+  const feed = feedOrder(feedList()), i = feed.findIndex(p => p.id === current.id), j = i + delta;
+  if (i < 0) { emsg("Este post no está en el feed (es historia o está filtrado)."); return; }
+  if (j < 0 || j >= feed.length) { emsg(delta < 0 ? "Ya es el primero del feed." : "Ya es el último del feed."); return; }
+  await moveTo(current.id, feed[j].id); emsg(`Ahora es el #${j + 1} del feed.`);
 }
 $("btn-sort").addEventListener("click", async () => {
   const all = [...posts].sort((a, b) => String(b.fecha || "").localeCompare(String(a.fecha || "")));
   const changes = []; all.forEach((p, i) => { if (p.orden !== i) { p.orden = i; changes.push(p); } });
-  renderFeed();
-  for (const p of changes) { const { error } = await sb.from("posts").update({ orden: p.orden }).eq("id", p.id); if (error) { banner(errMsg(error)); break; } }
+  renderFeed(); await persistOrder(changes);
 });
 
-function pmsg(t, warn){ const m = $("p-msg"); m.textContent = t || ""; m.classList.toggle("warn", !!warn); }
-function setPreview(src){ $("p-preview").innerHTML = src ? `<img src="${esc(src)}" alt="Imagen del post">` : "Subir imagen o portada<br><span class='note'>Vertical 4:5 se ve mejor</span>"; }
-function openPanel(p){
-  current = p; pendingFile = null; if (pendingUrl) { URL.revokeObjectURL(pendingUrl); pendingUrl = null; }
-  $("feed-layout").classList.add("has-panel"); $("panel").classList.remove("hidden"); pmsg("");
-  $("p-title").textContent = p.fecha ? `Post del ${fmtCorto(p.fecha)}` : "Post";
-  $("p-fecha").value = p.fecha || "";
-  ["tipo","pilar","status"].forEach(n => { $("p-"+n).innerHTML = optionsHtml(n, p[n], true); $("p-"+n).value = p[n] || ""; });
-  $("p-copy").value = p.copy || ""; $("p-caption").value = p.caption || "";
-  setPreview(urlOf(p.imagen_path)); $("p-rmimg").classList.toggle("hidden", !p.imagen_path);
-  renderFeed();
-  if (window.innerWidth < 900) $("panel").scrollIntoView({ behavior: "smooth", block: "start" });
+/* ---------- Editor de post ---------- */
+const E_FIELDS = ["fecha","dia","semana","mes","tipo","pilar","status","cumplio","copy","caption","inspo","comentarios","contenido"];
+let editorDirty = false;
+function emsg(t, warn){ const m = $("e-msg"); m.textContent = t || ""; m.classList.toggle("warn", !!warn); }
+function setPreview(src){ $("e-preview").innerHTML = src ? `<img src="${esc(src)}" alt="Imagen del post">` : "Subir imagen o portada<br><span class='note'>Vertical 4:5 se ve mejor</span>"; }
+function openEditor(p){
+  current = p; pendingFile = null; editorDirty = false; if (pendingUrl) { URL.revokeObjectURL(pendingUrl); pendingUrl = null; }
+  $("e-title").textContent = p.fecha ? `Post del ${fmtCorto(p.fecha)}` : "Post nuevo";
+  ["dia","semana","mes","tipo","pilar","status","cumplio"].forEach(k => { $("e-"+k).innerHTML = optionsHtml(k === "dia" ? "dia" : k === "mes" ? "mes" : k, p[k], true); $("e-"+k).value = p[k] || ""; });
+  ["fecha","copy","caption","inspo","comentarios","contenido"].forEach(k => { $("e-"+k).value = p[k] || ""; });
+  setPreview(urlOf(p.imagen_path) || thumbUrl(p.imagen_path)); $("e-rmimg").classList.toggle("hidden", !p.imagen_path); emsg("");
+  $("editor").classList.remove("hidden"); $("scrim").classList.remove("hidden");
+  if (isMobile()) document.body.style.overflow = "hidden";
+  $("editor").querySelector(".ed-body").scrollTop = 0;
+  if (view === "feed") renderFeed();
+  history.pushState({ editor: true }, "", location.hash);
 }
-function closePanel(){ current = null; $("panel").classList.add("hidden"); $("feed-layout").classList.remove("has-panel"); renderFeed(); }
-$("p-close").addEventListener("click", closePanel);
-$("p-preview").addEventListener("click", () => $("p-file").click());
-$("p-file").addEventListener("change", e => {
+function closeEditor(fromPop){
+  if ($("editor").classList.contains("hidden")) return;
+  if (editorDirty && !fromPop && !window.__forceClose) { emsg("Tienes cambios sin guardar. Toca Guardar o vuelve a tocar ✕ para descartarlos.", true); window.__forceClose = true; setTimeout(() => { window.__forceClose = false; }, 4000); return; }
+  window.__forceClose = false;
+  current = null; editorDirty = false; pendingFile = null;
+  $("editor").classList.add("hidden"); $("scrim").classList.add("hidden"); document.body.style.overflow = "";
+  if (!fromPop && history.state && history.state.editor) history.back();
+  if (view === "feed") renderFeed();
+}
+window.addEventListener("popstate", () => { if (!$("editor").classList.contains("hidden")) closeEditor(true); });
+$("e-close").addEventListener("click", () => closeEditor());
+$("scrim").addEventListener("click", () => closeEditor());
+document.addEventListener("keydown", e => { if (e.key === "Escape" && !$("editor").classList.contains("hidden") && !document.querySelector("dialog[open]")) closeEditor(); });
+$("editor").addEventListener("input", () => { editorDirty = true; });
+$("editor").addEventListener("change", e => { editorDirty = true; if (e.target.id === "e-fecha" && e.target.value) { if (!$("e-dia").value) $("e-dia").value = diaDe(e.target.value); if (!$("e-mes").value) $("e-mes").value = mesDe(e.target.value); } });
+$("e-prev").addEventListener("click", () => moveBy(-1));
+$("e-next").addEventListener("click", () => moveBy(1));
+$("e-preview").addEventListener("click", () => $("e-file").click());
+$("e-file").addEventListener("change", e => {
   const f = e.target.files[0]; e.target.value = ""; if (!f) return;
-  if (!f.type.startsWith("image/")) { pmsg("Ese archivo no es una imagen.", true); return; }
-  if (f.size > 20 * 1024 * 1024) { pmsg("La imagen pesa más de 20 MB. Usa una más ligera.", true); return; }
-  pendingFile = f; if (pendingUrl) URL.revokeObjectURL(pendingUrl); pendingUrl = URL.createObjectURL(f); setPreview(pendingUrl); pmsg("Imagen lista. Da clic en Guardar.");
+  if (!f.type.startsWith("image/") && !/\.(heic|heif)$/i.test(f.name)) { emsg("Ese archivo no es una imagen.", true); return; }
+  if (f.size > 40 * 1024 * 1024) { emsg("La imagen pesa más de 40 MB. Usa una más ligera.", true); return; }
+  pendingFile = f; editorDirty = true; if (pendingUrl) URL.revokeObjectURL(pendingUrl); pendingUrl = URL.createObjectURL(f); setPreview(pendingUrl); emsg("Imagen lista. Toca Guardar.");
 });
-$("p-save").addEventListener("click", async () => {
+async function uploadImage(file, postId){
+  emsg("Optimizando imagen…");
+  const big = await compress(file, 1440, 0.86), small = big ? await compress(file, 480, 0.8, big.blob.type) : null;
+  const stamp = Date.now();
+  let path, body, type;
+  if (big) { path = `${postId}/${stamp}.${big.ext}`; body = big.blob; type = big.blob.type; }
+  else { // el navegador no pudo leerla (p. ej. algunos HEIC): se sube tal cual
+    const ext = (file.name.split(".").pop() || "jpg").toLowerCase().replace(/[^a-z0-9]/g, "") || "jpg";
+    if (file.size > 20 * 1024 * 1024) throw new Error("La imagen es demasiado pesada. Usa una de menos de 20 MB.");
+    path = `${postId}/${stamp}.${ext}`; body = file; type = file.type || "image/jpeg";
+  }
+  emsg("Subiendo imagen…");
+  const { error } = await sb.storage.from(CFG.bucket).upload(path, body, { contentType: type, upsert: false, cacheControl: "31536000" });
+  if (error) throw error;
+  if (small) await sb.storage.from(CFG.bucket).upload(thumbOf(path), small.blob, { contentType: small.blob.type, upsert: true, cacheControl: "31536000" });
+  return path;
+}
+$("e-save").addEventListener("click", async () => {
   if (!current) return;
-  const btn = $("p-save"); btn.disabled = true;
+  const btn = $("e-save"); btn.disabled = true;
   try {
-    const patch = { fecha: $("p-fecha").value || null, tipo: $("p-tipo").value || null, pilar: $("p-pilar").value || null, status: $("p-status").value || null, copy: $("p-copy").value.trim() || null, caption: $("p-caption").value || null };
-    if (patch.fecha && patch.fecha !== current.fecha) { if (!current.dia) patch.dia = diaDe(patch.fecha); if (!current.mes) patch.mes = mesDe(patch.fecha); }
+    const patch = {};
+    E_FIELDS.forEach(k => { const v = $("e-"+k).value; patch[k] = (k === "copy" ? v.trim() : v) || null; });
     const old = current.imagen_path;
-    if (pendingFile) {
-      pmsg("Subiendo imagen…");
-      const ext = (pendingFile.name.split(".").pop() || "jpg").toLowerCase().replace(/[^a-z0-9]/g, "") || "jpg";
-      const path = `${current.id}/${Date.now()}.${ext}`;
-      const { error: ue } = await sb.storage.from(CFG.bucket).upload(path, pendingFile, { contentType: pendingFile.type, upsert: false });
-      if (ue) throw ue;
-      patch.imagen_path = path;
-    }
-    pmsg("Guardando…");
+    if (pendingFile) patch.imagen_path = await uploadImage(pendingFile, current.id);
+    emsg("Guardando…");
     const { error } = await sb.from("posts").update(patch).eq("id", current.id);
     if (error) throw error;
-    if (patch.imagen_path) { await signedUrls([patch.imagen_path]); if (old) sb.storage.from(CFG.bucket).remove([old]); }
-    Object.assign(current, patch); pendingFile = null; pmsg("Guardado."); renderFeed(); setPreview(urlOf(current.imagen_path)); $("p-rmimg").classList.toggle("hidden", !current.imagen_path);
-  } catch (err) { pmsg(errMsg(err), true); }
+    if (patch.imagen_path) { await signedUrls(allImagePaths([{ imagen_path: patch.imagen_path }])); if (old) sb.storage.from(CFG.bucket).remove([old, thumbOf(old)]); }
+    Object.assign(current, patch); const i = posts.findIndex(p => p.id === current.id); if (i >= 0) posts[i] = current;
+    pendingFile = null; editorDirty = false; emsg("Guardado.");
+    $("e-title").textContent = current.fecha ? `Post del ${fmtCorto(current.fecha)}` : "Post nuevo";
+    setPreview(urlOf(current.imagen_path) || thumbUrl(current.imagen_path)); $("e-rmimg").classList.toggle("hidden", !current.imagen_path);
+    renderAll();
+  } catch (err) { emsg(errMsg(err), true); }
   finally { btn.disabled = false; }
 });
-$("p-rmimg").addEventListener("click", async () => {
+$("e-rmimg").addEventListener("click", async () => {
   if (!current || !current.imagen_path) return;
   const old = current.imagen_path;
   const { error } = await sb.from("posts").update({ imagen_path: null }).eq("id", current.id);
-  if (error) { pmsg(errMsg(error), true); return; }
-  sb.storage.from(CFG.bucket).remove([old]); current.imagen_path = null; setPreview(""); $("p-rmimg").classList.add("hidden"); pmsg("Imagen quitada."); renderFeed();
+  if (error) { emsg(errMsg(error), true); return; }
+  sb.storage.from(CFG.bucket).remove([old, thumbOf(old)]); current.imagen_path = null; setPreview(""); $("e-rmimg").classList.add("hidden"); emsg("Imagen quitada."); renderAll();
 });
+$("e-del").addEventListener("click", () => { if (current) { editorDirty = false; confirmDelete(current); } });
 
 /* ---------- Resumen ---------- */
 function crossTable(el, rowsKey, rowVals, colKey, colVals, rowsFilter){
@@ -476,9 +581,8 @@ $("opt-list").addEventListener("click", async e => {
   }
   if (up) {
     const i = +up.dataset.up; if (i === 0) return;
-    const a = items[i], b = items[i - 1];
-    for (const [o, ord] of [[a, i], [b, i + 1]]) { const { error } = await sb.from("opciones").update({ orden: ord }).eq("lista", l).eq("valor", o.valor); if (error) { banner(errMsg(error)); return; } }
-    items.forEach((o, k) => { if (o !== a && o !== b && o.orden !== k + 1) sb.from("opciones").update({ orden: k + 1 }).eq("lista", l).eq("valor", o.valor); });
+    const reordered = items.slice(); reordered.splice(i - 1, 0, reordered.splice(i, 1)[0]);
+    for (let k = 0; k < reordered.length; k++) { if (reordered[k].orden !== k + 1) { const { error } = await sb.from("opciones").update({ orden: k + 1 }).eq("lista", l).eq("valor", reordered[k].valor); if (error) { banner(errMsg(error)); return; } } }
     loadOpciones();
   }
 });
@@ -492,7 +596,7 @@ $("opt-form").addEventListener("submit", async e => {
 let team = [];
 async function loadTeam(){ const { data } = await sb.from("miembros").select("*").order("created_at"); team = data || []; if (view === "ajustes") renderTeam(); }
 function renderTeam(){
-  $("team-list").innerHTML = team.length ? team.map(m => `<li><span class="grow">${esc(m.nombre ? m.nombre + " · " : "")}${esc(m.email)}</span>${m.email.toLowerCase() === (user.email || "").toLowerCase() ? '<span class="note">Tú</span>' : `<button class="icon-btn" data-rmt="${esc(m.email)}" title="Quitar" aria-label="Quitar ${esc(m.email)}">✕</button>`}</li>`).join("") : '<li class="note">No puedes ver el equipo hasta que tu correo esté en la lista.</li>';
+  $("team-list").innerHTML = team.length ? team.map(m => `<li><span class="grow">${esc(m.nombre ? m.nombre + " · " : "")}${esc(m.email)}</span>${m.email.toLowerCase() === ((user && user.email) || "").toLowerCase() ? '<span class="note">Tú</span>' : `<button class="icon-btn" data-rmt="${esc(m.email)}" title="Quitar" aria-label="Quitar ${esc(m.email)}">✕</button>`}</li>`).join("") : '<li class="note">No puedes ver el equipo hasta que tu correo esté en la lista.</li>';
 }
 $("team-list").addEventListener("click", e => {
   const b = e.target.closest("[data-rmt]"); if (!b) return;

@@ -2,11 +2,21 @@
 <html lang="es">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Parrilla YUC'ATÅLOVE</title>
+<meta name="theme-color" content="#AB391B">
+<meta name="description" content="Parrilla de contenido y vista del feed de Instagram de YUC'ATÅLOVE">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icons/favicon-32.png" sizes="32x32">
+<link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Parrilla YL">
+<link rel="preconnect" href="https://pgqwzusyrsjjdofucrkr.supabase.co" crossorigin>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,400;0,600;1,400&family=Nunito+Sans:wght@400;600;700&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@400;600&family=Nunito+Sans:wght@400;600;700&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="styles.css">
 </head>
 <body>
@@ -17,7 +27,7 @@
     <h1>Parrilla de contenido</h1>
     <p class="note">Entra con el correo que está registrado en el equipo.</p>
     <form id="auth-form" novalidate>
-      <label for="a-email">Correo<input id="a-email" type="email" autocomplete="email" required></label>
+      <label for="a-email">Correo<input id="a-email" type="email" autocomplete="username" inputmode="email" required></label>
       <label for="a-pass">Contraseña<input id="a-pass" type="password" autocomplete="current-password" minlength="6" required></label>
       <button class="btn" id="a-submit" type="submit">Entrar</button>
     </form>
@@ -29,12 +39,12 @@
   </div>
 </section>
 
-<!-- Nueva contraseña (después del correo de recuperación) -->
 <section id="recover" class="auth hidden" aria-label="Nueva contraseña">
   <div class="auth-card">
     <div class="logo">YUC'ATÅLOVE</div>
     <h1>Nueva contraseña</h1>
     <form id="rec-form" novalidate>
+      <input type="text" autocomplete="username" class="sr" tabindex="-1" aria-hidden="true">
       <label for="r-pass">Contraseña nueva<input id="r-pass" type="password" autocomplete="new-password" minlength="6" required></label>
       <button class="btn" type="submit">Guardar contraseña</button>
     </form>
@@ -47,14 +57,15 @@
   <header class="top">
     <div class="brand"><span class="logo">YUC'ATÅLOVE</span><span class="sub">Parrilla de contenido</span></div>
     <nav class="tabs" role="tablist" aria-label="Secciones">
-      <button role="tab" data-view="parrilla" id="tab-parrilla">Parrilla</button>
-      <button role="tab" data-view="feed" id="tab-feed">Feed</button>
-      <button role="tab" data-view="resumen" id="tab-resumen">Resumen</button>
-      <button role="tab" data-view="ajustes" id="tab-ajustes">Ajustes</button>
+      <button role="tab" data-view="parrilla" id="tab-parrilla"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 5h16M4 10h16M4 15h16M4 20h16"/></svg><span>Parrilla</span></button>
+      <button role="tab" data-view="feed" id="tab-feed"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/></svg><span>Feed</span></button>
+      <button role="tab" data-view="resumen" id="tab-resumen"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 20V11M12 20V4M19 20v-6"/></svg><span>Resumen</span></button>
+      <button role="tab" data-view="ajustes" id="tab-ajustes"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3M4.9 4.9l2.1 2.1M17 17l2.1 2.1M4.9 19.1 7 17M17 7l2.1-2.1"/></svg><span>Ajustes</span></button>
     </nav>
     <div class="who"><span id="who-email"></span><button class="link" id="btn-logout" type="button">Salir</button></div>
   </header>
   <p class="banner hidden" id="banner" role="alert"></p>
+  <p class="banner offline hidden" id="offline" role="status">Sin conexión. Los cambios no se guardarán hasta que vuelva el internet.</p>
 
   <!-- PARRILLA -->
   <main id="view-parrilla" class="view">
@@ -66,61 +77,43 @@
       </div>
       <div class="right"><span class="note status-line" id="save-msg" role="status"></span></div>
     </div>
-    <div class="table-wrap">
+    <div class="mfilters mob-only" id="mfilters" aria-label="Filtros">
+      <input type="search" id="mf-q" placeholder="Buscar en copy, caption, comentarios…" aria-label="Buscar">
+      <div class="mf-row" id="mf-row"></div>
+    </div>
+    <div class="table-wrap desk-only">
       <table class="grid-table" id="tbl">
         <thead id="thead"></thead>
         <tbody id="tbody"></tbody>
       </table>
     </div>
+    <ul class="cards-list mob-only" id="cards" aria-label="Posts"></ul>
   </main>
 
   <!-- FEED -->
   <main id="view-feed" class="view hidden">
-    <div class="feed-layout" id="feed-layout">
-      <div class="feed-main">
-        <div class="profile">
-          <div class="avatar" aria-hidden="true">YL</div>
-          <div>
-            <h2>YUC'ATÅLOVE</h2>
-            <p class="note">Destination weddings in Yucatán · Together as one</p>
-            <div class="stats"><span><b id="st-feed">0</b> en el feed</span><span><b id="st-img">0</b> con imagen</span><span><b id="st-story">0</b> historias</span></div>
-          </div>
+    <div class="feed-main">
+      <div class="profile">
+        <div class="avatar" aria-hidden="true">YL</div>
+        <div>
+          <h2>YUC'ATÅLOVE</h2>
+          <p class="note">Destination weddings in Yucatán · Together as one</p>
+          <div class="stats"><span><b id="st-feed">0</b> en el feed</span><span><b id="st-img">0</b> con imagen</span><span><b id="st-story">0</b> historias</span></div>
         </div>
-        <div class="toolbar">
-          <div class="left">
-            <label class="label-sm" for="ff-mes">Mes</label><select id="ff-mes"></select>
-            <label class="label-sm" for="ff-status">Status</label><select id="ff-status"></select>
-          </div>
-          <div class="right"><button class="btn ghost small" id="btn-sort" type="button">Ordenar por fecha</button></div>
-        </div>
-        <section id="stories-wrap" class="hidden" aria-label="Historias">
-          <div class="label-sm">Historias (no aparecen en la cuadrícula)</div>
-          <div class="stories" id="stories"></div>
-        </section>
-        <section class="feed-grid" id="feed-grid" aria-label="Cuadrícula del feed"></section>
-        <p class="note">Arrastra un cuadro sobre otro para cambiarlos de lugar. Da clic en uno para subir su imagen o editarlo. Los datos son los mismos de la Parrilla.</p>
       </div>
-      <aside class="panel hidden" id="panel" aria-label="Editar post">
-        <h3 id="p-title">Post</h3>
-        <button type="button" class="preview" id="p-preview">Subir imagen o portada</button>
-        <input type="file" id="p-file" accept="image/*" class="hidden">
-        <div class="row2">
-          <label for="p-fecha">Fecha<input type="date" id="p-fecha"></label>
-          <label for="p-tipo">Tipo de post<select id="p-tipo"></select></label>
+      <div class="toolbar">
+        <div class="left">
+          <label class="label-sm" for="ff-mes">Mes</label><select id="ff-mes"></select>
+          <label class="label-sm" for="ff-status">Status</label><select id="ff-status"></select>
         </div>
-        <div class="row2">
-          <label for="p-pilar">Pilar<select id="p-pilar"></select></label>
-          <label for="p-status">Status<select id="p-status"></select></label>
-        </div>
-        <label for="p-copy">Copy<input type="text" id="p-copy"></label>
-        <label for="p-caption">Caption<textarea id="p-caption"></textarea></label>
-        <div class="actions">
-          <button class="btn" id="p-save" type="button">Guardar</button>
-          <button class="btn ghost" id="p-close" type="button">Cerrar</button>
-          <button class="btn ghost small hidden" id="p-rmimg" type="button">Quitar imagen</button>
-        </div>
-        <p class="note status-line" id="p-msg" role="status"></p>
-      </aside>
+        <div class="right"><button class="btn ghost small" id="btn-sort" type="button">Ordenar por fecha</button></div>
+      </div>
+      <section id="stories-wrap" class="hidden" aria-label="Historias">
+        <div class="label-sm">Historias (no aparecen en la cuadrícula)</div>
+        <div class="stories" id="stories"></div>
+      </section>
+      <section class="feed-grid" id="feed-grid" aria-label="Cuadrícula del feed"></section>
+      <p class="note"><span class="desk-only">Arrastra un cuadro sobre otro para cambiarlos de lugar. </span>Toca un cuadro para subir su imagen, editarlo o moverlo de lugar. Los datos son los mismos de la Parrilla.</p>
     </div>
   </main>
 
@@ -155,16 +148,63 @@
         <p class="note">Solo los correos de esta lista pueden ver y editar la parrilla. Después de agregar un correo, esa persona crea su acceso en la pantalla de entrada.</p>
         <ul class="opt-list" id="team-list"></ul>
         <form class="inline-form" id="team-form">
-          <label for="tm-email" class="sr">Correo</label><input id="tm-email" type="email" placeholder="correo@ejemplo.com" required>
+          <label for="tm-email" class="sr">Correo</label><input id="tm-email" type="email" inputmode="email" placeholder="correo@ejemplo.com" required>
           <label for="tm-nombre" class="sr">Nombre</label><input id="tm-nombre" type="text" placeholder="Nombre">
           <button class="btn small" type="submit">Agregar</button>
         </form>
+      </section>
+      <section class="card">
+        <h3>Instalar en el celular</h3>
+        <p class="note"><b>iPhone (Safari):</b> toca Compartir y luego “Agregar a inicio”.<br><b>Android (Chrome):</b> abre el menú ⋮ y elige “Instalar app” o “Agregar a la pantalla principal”.</p>
+        <button class="btn small hidden" id="btn-install" type="button">Instalar app</button>
       </section>
     </div>
   </main>
 </div>
 
-<!-- Editor de texto largo -->
+<!-- Editor de post: panel lateral en escritorio, pantalla completa en celular -->
+<div class="scrim hidden" id="scrim"></div>
+<aside class="editor hidden" id="editor" aria-label="Editar post" role="dialog">
+  <div class="ed-head">
+    <button class="icon-btn" id="e-close" type="button" aria-label="Cerrar">✕</button>
+    <h3 id="e-title">Post</h3>
+    <button class="btn small" id="e-save" type="button">Guardar</button>
+  </div>
+  <div class="ed-body">
+    <button type="button" class="preview" id="e-preview">Subir imagen o portada</button>
+    <input type="file" id="e-file" accept="image/*" class="hidden">
+    <div class="actions">
+      <button class="btn ghost small hidden" id="e-rmimg" type="button">Quitar imagen</button>
+      <span class="move-ctl"><span class="label-sm">Lugar en el feed</span>
+        <button class="btn ghost small" id="e-prev" type="button" aria-label="Mover antes en el feed">◀ Antes</button>
+        <button class="btn ghost small" id="e-next" type="button" aria-label="Mover después en el feed">Después ▶</button></span>
+    </div>
+    <div class="row2">
+      <label for="e-fecha">Fecha<input type="date" id="e-fecha"></label>
+      <label for="e-dia">Día<select id="e-dia"></select></label>
+    </div>
+    <div class="row2">
+      <label for="e-semana">Semana<select id="e-semana"></select></label>
+      <label for="e-mes">Mes<select id="e-mes"></select></label>
+    </div>
+    <div class="row2">
+      <label for="e-tipo">Tipo de post<select id="e-tipo"></select></label>
+      <label for="e-pilar">Pilar<select id="e-pilar"></select></label>
+    </div>
+    <div class="row2">
+      <label for="e-status">Status<select id="e-status"></select></label>
+      <label for="e-cumplio">¿Cumplió?<select id="e-cumplio"></select></label>
+    </div>
+    <label for="e-copy">Copy<textarea id="e-copy" rows="3"></textarea></label>
+    <label for="e-caption">Caption<textarea id="e-caption" rows="7"></textarea></label>
+    <label for="e-inspo">Inspo / Referencia<textarea id="e-inspo" rows="2"></textarea></label>
+    <label for="e-comentarios">Comentarios<textarea id="e-comentarios" rows="3"></textarea></label>
+    <label for="e-contenido">Contenido (link del material)<textarea id="e-contenido" rows="2"></textarea></label>
+    <p class="note status-line" id="e-msg" role="status"></p>
+    <button class="btn ghost small del" id="e-del" type="button">Eliminar post</button>
+  </div>
+</aside>
+
 <dialog id="dlg" aria-labelledby="dlg-title">
   <form method="dialog" class="dlg-body">
     <h3 id="dlg-title">Editar</h3>
