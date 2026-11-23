@@ -163,7 +163,7 @@ sb.auth.onAuthStateChange((event, session) => {
 async function start(){
   if (!$("recover").classList.contains("hidden")) return;
   $("auth").classList.add("hidden"); $("app").classList.remove("hidden");
-  $("who-email").textContent = user.email;
+  $("who-email").textContent = user.email; $("pw-user").value = user.email;
   banner(""); netState();
   setView(location.hash.replace("#","") || "parrilla");
   const { data: yo, error: e1 } = await sb.from("miembros").select("email").limit(1);
@@ -611,6 +611,19 @@ $("team-form").addEventListener("submit", async e => {
   const email = $("tm-email").value.trim().toLowerCase(), nombre = $("tm-nombre").value.trim() || null; if (!email) return;
   const { error } = await sb.from("miembros").insert({ email, nombre });
   if (error) banner(/duplicate/i.test(error.message) ? "Ese correo ya está en el equipo." : errMsg(error)); else { $("tm-email").value = ""; $("tm-nombre").value = ""; banner(""); loadTeam(); }
+});
+
+
+/* ---------- Mi contraseña ---------- */
+$("pw-form").addEventListener("submit", async e => {
+  e.preventDefault();
+  const a = $("pw-new").value, b = $("pw-rep").value, m = $("pw-msg");
+  m.classList.add("warn");
+  if (a.length < 6) { m.textContent = "Usa al menos 6 caracteres."; return; }
+  if (a !== b) { m.textContent = "Las dos contraseñas no coinciden."; return; }
+  const { error } = await sb.auth.updateUser({ password: a });
+  if (error) { m.textContent = /different from the old/i.test(error.message) ? "La contraseña nueva debe ser distinta a la actual." : errMsg(error); return; }
+  m.classList.remove("warn"); m.textContent = "Listo, tu contraseña se cambió."; $("pw-new").value = ""; $("pw-rep").value = "";
 });
 
 /* ---------- Inicio ---------- */

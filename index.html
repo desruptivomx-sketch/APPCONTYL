@@ -156,6 +156,17 @@
         </form>
       </section>
       <section class="card">
+        <h3>Mi contraseña</h3>
+        <p class="note">Cámbiala aquí cuando quieras. Si te dieron una contraseña temporal, cámbiala la primera vez que entres.</p>
+        <form class="inline-form" id="pw-form" novalidate>
+          <input type="text" autocomplete="username" class="sr" tabindex="-1" aria-hidden="true" id="pw-user">
+          <label for="pw-new" class="sr">Contraseña nueva</label><input id="pw-new" type="password" autocomplete="new-password" placeholder="Contraseña nueva (mín. 6)" minlength="6" required>
+          <label for="pw-rep" class="sr">Repite la contraseña</label><input id="pw-rep" type="password" autocomplete="new-password" placeholder="Repítela" minlength="6" required>
+          <button class="btn small" type="submit">Cambiar</button>
+        </form>
+        <p class="note status-line" id="pw-msg" role="status"></p>
+      </section>
+      <section class="card">
         <h3>Instalar en el celular</h3>
         <p class="note"><b>iPhone (Safari):</b> toca Compartir y luego “Agregar a inicio”.<br><b>Android (Chrome):</b> abre el menú ⋮ y elige “Instalar app” o “Agregar a la pantalla principal”.</p>
         <button class="btn small hidden" id="btn-install" type="button">Instalar app</button>
