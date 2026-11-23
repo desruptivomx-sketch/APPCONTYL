@@ -447,10 +447,13 @@ const ICON = {
   Reel: c => `<svg class="type" viewBox="0 0 24 24" fill="none" stroke="${c}" stroke-width="2" aria-hidden="true"><rect x="3" y="3" width="18" height="18" rx="4"/><path d="M3 8h18M8 3l3 5M14 3l3 5"/><path d="M10 11.5v5l4.5-2.5z" fill="${c}" stroke="none"/></svg>`,
   Carrusel: c => `<svg class="type" viewBox="0 0 24 24" fill="none" stroke="${c}" stroke-width="2" aria-hidden="true"><rect x="7" y="7" width="14" height="14" rx="2"/><path d="M17 7V5a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v10a2 2 0 0 0 2 2h2"/></svg>`
 };
-function feedList(){
+// Pilares internos: se planean en la Parrilla pero nunca se muestran en el Feed (ni cuadrícula ni historias)
+const esInterno = p => /^contenidos?\s+bodas$/i.test(String(p.pilar || "").trim());
+function feedListTodo(){
   const m = $("ff-mes").value, s = $("ff-status").value;
   return posts.filter(p => (!m || p.mes === m || (!p.mes && mesDe(p.fecha) === m)) && (!s || p.status === s));
 }
+function feedList(){ return feedListTodo().filter(p => !esInterno(p)); }
 // Solo lo que aparece en la cuadrícula de Instagram: historias y otras plataformas quedan fuera
 const FUERA_DEL_FEED = ["Historia", "Pin", "TikTok", "Video YT", "Blog"];
 const enFeed = p => !FUERA_DEL_FEED.includes(p.tipo);
@@ -461,7 +464,8 @@ function renderFeed(){
   const st = list.filter(p => p.tipo === "Historia").sort((a, b) => String(a.fecha || "").localeCompare(String(b.fecha || "")));
   $("st-feed").textContent = feed.length; $("st-img").textContent = feed.filter(p => p.imagen_path).length; $("st-story").textContent = st.length;
   const otras = list.filter(p => FUERA_DEL_FEED.includes(p.tipo) && p.tipo !== "Historia").length;
-  $("st-otras").textContent = otras ? `${otras} de otras plataformas (Pin, TikTok, YouTube, Blog) no se muestran en la cuadrícula; están en la Parrilla y el Calendario.` : "";
+  const internos = feedListTodo().filter(esInterno).length;
+  $("st-otras").textContent = [otras ? `${otras} de otras plataformas (Pin, TikTok, YouTube, Blog) no se muestran en la cuadrícula.` : "", internos ? `${internos} de “Contenidos bodas” son internos y no aparecen en el Feed.` : ""].filter(Boolean).join(" ") + (otras || internos ? " Están en la Parrilla y el Calendario." : "");
   const g = $("feed-grid"); g.innerHTML = "";
   if (!feed.length) g.innerHTML = '<div class="empty-state">No hay posts para este filtro. Agrégalos en la pestaña Parrilla.</div>';
   const frag = document.createDocumentFragment();
@@ -987,7 +991,7 @@ async function exportarPDF(){
     }
     h += `<section class="pr-page"><h2 class="pr-h">Calendario <small>${titulo}</small></h2><div class="pr-cal">${cal}</div></section>`;
     // Feed (como se verá en Instagram: lo más reciente arriba)
-    const feed = feedOrder(delMes);
+    const feed = feedOrder(delMes.filter(p => !esInterno(p)));
     h += `<section class="pr-page"><h2 class="pr-h">Vista del feed <small>${feed.length} publicaciones · sin historias</small></h2><div class="pr-feed">${feed.map(p => { const u = full(p); return `<div class="pr-tile">${u ? `<img src="${esc(u)}" alt="">` : `<em>${esc(p.copy || p.tipo || "Sin imagen")}</em>`}<span>${fmtCorto(p.fecha)}</span></div>`; }).join("") || '<p>Sin publicaciones en el feed este mes.</p>'}</div></section>`;
     // Detalle de cada post
     h += `<section class="pr-page"><h2 class="pr-h">Detalle de publicaciones <small>${titulo}</small></h2>${delMes.map(p => { const u = full(p); return `<article class="pr-post"><div class="img">${u ? `<img src="${esc(u)}" alt="">` : ""}</div><div>
