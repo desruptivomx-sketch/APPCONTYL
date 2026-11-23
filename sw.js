@@ -1,9 +1,10 @@
 // Service worker: guarda la "cáscara" de la app para que abra rápido y funcione como app instalada.
 // Los datos (Supabase) nunca se guardan aquí: siempre se piden en vivo.
-const VERSION = "parrilla-v2";
+const VERSION = "parrilla-v3";
 const SHELL = [
   "./", "index.html", "styles.css", "app.js", "config.js", "lib/supabase.js",
-  "manifest.webmanifest", "icons/icon-192.png", "icons/icon-512.png", "icons/apple-touch-icon.png", "icons/favicon-32.png"
+  "manifest.webmanifest", "icons/icon-192.png", "icons/icon-512.png", "icons/apple-touch-icon.png", "icons/favicon-32.png",
+  "fonts/the-seasons-regular.woff2", "fonts/gotham-rounded-light.woff2", "fonts/georgia-praline-serif.woff2"
 ];
 
 self.addEventListener("install", e => {
