@@ -21,9 +21,15 @@
 <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@400;600&family=Nunito+Sans:wght@400;600;700&display=swap" rel="stylesheet">
 <link rel="preload" href="fonts/the-seasons-regular.woff2" as="font" type="font/woff2" crossorigin>
 <link rel="preload" href="fonts/gotham-rounded-light.woff2" as="font" type="font/woff2" crossorigin>
-<link rel="stylesheet" href="styles.css?v=11">
+<link rel="stylesheet" href="styles.css?v=12">
 </head>
 <body>
+<!-- Pantalla de carga: se ve hasta que la app decide si mostrar la entrada o la parrilla -->
+<section id="boot" class="boot" aria-live="polite">
+  <img src="icons/simbolo-terracota.png" alt="" width="240" height="218">
+  <p class="note" id="boot-msg">Cargando…</p>
+  <button class="btn ghost small hidden" id="boot-fix" type="button">¿No carga? Reparar y volver a intentar</button>
+</section>
 <!-- Acceso -->
 <section id="auth" class="auth hidden" aria-label="Acceso">
   <div class="auth-card">
@@ -258,7 +264,7 @@
 </dialog>
 
 <script src="lib/supabase.js"></script>
-<script src="config.js?v=11"></script>
-<script src="app.js?v=11"></script>
+<script src="config.js?v=12"></script>
+<script src="app.js?v=12"></script>
 </body>
 </html>

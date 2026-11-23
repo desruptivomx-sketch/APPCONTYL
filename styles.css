@@ -273,3 +273,8 @@ body{font-weight:300}
 
 .prof-name img{display:block;height:22px;width:auto;max-width:100%;margin:2px 0 6px}
 @media (max-width:760px){.prof-name img{height:17px}}
+
+/* Pantalla de carga */
+.boot{position:fixed;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:14px;background:var(--arena);z-index:100;padding:24px;text-align:center}
+.boot img{width:72px;height:auto}
+@media (prefers-reduced-motion:no-preference){.boot img{animation:latido 1.6s ease-in-out infinite}@keyframes latido{50%{opacity:.45}}}

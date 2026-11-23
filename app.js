@@ -1,6 +1,19 @@
 /* Parrilla YUC'ATÅLOVE — tabla + feed + resumen sobre Supabase (v2: móvil, app instalable, imágenes optimizadas) */
 (function(){
 "use strict";
+/* ---------- Pantalla de carga y reparación ---------- */
+const bootEl = document.getElementById("boot");
+function hideBoot(){ if (bootEl) bootEl.classList.add("hidden"); }
+async function repararApp(){
+  try { Object.keys(localStorage).filter(k => k.startsWith("sb-")).forEach(k => localStorage.removeItem(k)); } catch (_) {}
+  try { sessionStorage.clear(); } catch (_) {}
+  try { if (window.caches) for (const k of await caches.keys()) await caches.delete(k); } catch (_) {}
+  try { if (navigator.serviceWorker) for (const r of await navigator.serviceWorker.getRegistrations()) await r.unregister(); } catch (_) {}
+  location.replace(location.pathname + "?r=" + Date.now() + location.hash);
+}
+document.getElementById("boot-fix").addEventListener("click", repararApp);
+const bootTimer = setTimeout(() => { if (bootEl && !bootEl.classList.contains("hidden")) { document.getElementById("boot-msg").textContent = "Está tardando más de lo normal."; document.getElementById("boot-fix").classList.remove("hidden"); } }, 7000);
+window.addEventListener("error", e => { if (bootEl && !bootEl.classList.contains("hidden")) { document.getElementById("boot-msg").textContent = "Hubo un error al abrir la app (" + (e.message || "desconocido") + ")."; document.getElementById("boot-fix").classList.remove("hidden"); } });
 const CFG = window.PARRILLA_CONFIG;
 const $ = id => document.getElementById(id);
 const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
@@ -107,7 +120,7 @@ function mesDe(f){ return f ? MESES[+f.split("-")[1]-1] : null; }
 
 /* ---------- Acceso ---------- */
 let signupMode = false;
-function showAuth(){ $("app").classList.add("hidden"); $("recover").classList.add("hidden"); closeEditor(); $("auth").classList.remove("hidden"); }
+function showAuth(){ hideBoot(); clearTimeout(bootTimer); $("app").classList.add("hidden"); $("recover").classList.add("hidden"); closeEditor(); $("auth").classList.remove("hidden"); }
 $("a-toggle").addEventListener("click", () => {
   signupMode = !signupMode;
   $("a-submit").textContent = signupMode ? "Crear mi acceso" : "Entrar";
@@ -153,7 +166,7 @@ $("rec-form").addEventListener("submit", async e => {
 $("btn-logout").addEventListener("click", async () => { await sb.auth.signOut(); });
 
 sb.auth.onAuthStateChange((event, session) => {
-  if (event === "PASSWORD_RECOVERY") { $("auth").classList.add("hidden"); $("app").classList.add("hidden"); $("recover").classList.remove("hidden"); return; }
+  if (event === "PASSWORD_RECOVERY") { hideBoot(); $("auth").classList.add("hidden"); $("app").classList.add("hidden"); $("recover").classList.remove("hidden"); return; }
   const u = session ? session.user : null;
   if (u && (!user || user.id !== u.id)) { user = u; start(); }
   else if (!u) { user = null; if (channel) { sb.removeChannel(channel); channel = null; } showAuth(); }
@@ -162,6 +175,7 @@ sb.auth.onAuthStateChange((event, session) => {
 /* ---------- Arranque ---------- */
 async function start(){
   if (!$("recover").classList.contains("hidden")) return;
+  hideBoot(); clearTimeout(bootTimer);
   $("auth").classList.add("hidden"); $("app").classList.remove("hidden");
   $("who-email").textContent = user.email; $("pw-user").value = user.email;
   banner(""); netState();
@@ -692,5 +706,5 @@ $("pw-form").addEventListener("submit", async e => {
 });
 
 /* ---------- Inicio ---------- */
-sb.auth.getSession().then(({ data }) => { if (!data.session) showAuth(); });
+sb.auth.getSession().then(({ data }) => { if (!data.session) showAuth(); }).catch(() => showAuth());
 })();
