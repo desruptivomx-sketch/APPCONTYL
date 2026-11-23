@@ -264,3 +264,9 @@ body{font-weight:300}
 .cal-agenda .cal-post img{width:32px;height:40px}
 .cal-agenda.mob-only{display:none}
 @media (max-width:760px){.cal-agenda.mob-only{display:flex}.cal-month{min-width:0;font-size:16px}}
+
+/* Eliminar más visible */
+.ed-body .del{border:1px solid var(--terracota);margin-top:16px;align-self:stretch;padding:10px}
+.grid-table td.c-acc{position:sticky;right:0;z-index:1;background:#fff;box-shadow:-6px 0 8px -6px rgba(48,48,48,.18)}
+.grid-table thead th:last-child{position:sticky;right:0;z-index:3}
+.grid-table td.c-acc .icon-btn{font-size:15px}
