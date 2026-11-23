@@ -222,3 +222,13 @@ body{font-weight:300}
 .meter{height:12px;border-radius:999px;background:var(--arena);border:1px solid var(--linea);overflow:hidden}
 .meter span{display:block;height:100%;width:0;background:var(--taupe);border-radius:999px}
 .meter.alto span{background:var(--terracota)}
+
+/* Logos oficiales */
+.auth-logo{display:block;width:min(260px,80%);height:auto;margin:0 auto 4px}
+.auth-card h1{text-align:center}
+.auth-card > .note:first-of-type{text-align:center}
+.brand{display:flex;align-items:center;gap:10px}
+.brand-sym{height:30px;width:auto;display:block}
+.brand-word{height:16px;width:auto;display:block}
+.avatar img{width:56%;height:auto;display:block}
+@media (max-width:760px){.brand-sym{height:26px}.brand-word{height:14px}}
