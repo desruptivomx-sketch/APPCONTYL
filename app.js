@@ -309,8 +309,8 @@ function cellHtml(p, c){
   if (c.type === "thumb") { const u = thumbUrl(v); return v && u ? `<button class="icon-btn" data-img="${p.id}" title="Ver o cambiar imagen"><img class="thumb" src="${esc(u)}" alt="" loading="lazy" decoding="async"></button>` : `<button class="icon-btn" data-img="${p.id}" title="Subir imagen" aria-label="Subir imagen">＋</button>`; }
   if (c.type === "long") {
     const isLink = /^https?:\/\/\S+$/.test(String(v || "").trim());
-    if (isLink) return `<div style="display:flex;align-items:flex-start"><button class="txt" data-long="${c.k}" title="Editar">${esc(v)}</button><a class="icon-btn" href="${esc(String(v).trim())}" target="_blank" rel="noopener" title="Abrir enlace" aria-label="Abrir enlace">↗</a></div>`;
-    return `<button class="txt${v ? "" : " empty"}" data-long="${c.k}" title="Editar">${v ? esc(v) : "—"}</button>`;
+    if (isLink) return `<div style="display:flex;align-items:flex-start"><button class="txt" data-long="${c.k}" title="Ver completo y editar"><span class="clamp">${esc(v)}</span></button><a class="icon-btn" href="${esc(String(v).trim())}" target="_blank" rel="noopener" title="Abrir enlace" aria-label="Abrir enlace">↗</a></div>`;
+    return `<button class="txt${v ? "" : " empty"}" data-long="${c.k}" title="Ver completo y editar"><span class="clamp">${v ? esc(String(v).replace(/\s*\n+\s*/g, " ")) : "—"}</span></button>`;
   }
   return "";
 }

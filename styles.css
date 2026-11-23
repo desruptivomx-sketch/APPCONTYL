@@ -293,3 +293,11 @@ body{font-weight:300}
 .c-form textarea{flex:1;min-height:44px}
 .c-empty{font-size:13px;color:var(--taupe)}
 .cbadge{display:inline-flex;align-items:center;gap:3px;font-size:11px;color:var(--chocolate);font-weight:600}
+
+/* Tabla compacta: textos largos en 2 líneas; al tocar se abre completo */
+.grid-table td .txt{display:block;max-height:none;-webkit-line-clamp:unset;white-space:normal;overflow:hidden;cursor:pointer}
+.grid-table td .txt .clamp{display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:2;line-clamp:2;overflow:hidden;overflow-wrap:anywhere}
+.grid-table td .txt:hover .clamp{color:var(--terracota)}
+.grid-table td{height:52px}
+.mfilters.mob-only{display:none}
+@media (max-width:760px){.mfilters.mob-only{display:flex}}
