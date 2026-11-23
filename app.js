@@ -22,7 +22,26 @@ if (!window.supabase || !CFG) { document.body.innerHTML = '<p style="padding:24p
 const sb = window.supabase.createClient(CFG.supabaseUrl, CFG.supabaseKey, { auth: { persistSession: true, detectSessionInUrl: true } });
 
 /* ---------- App instalable ---------- */
-if ("serviceWorker" in navigator) window.addEventListener("load", () => navigator.serviceWorker.register("sw.js").catch(() => {}));
+// Actualización automática: cuando se publica una versión nueva, la app la toma sola
+// (si hay un post abierto en el editor, espera y muestra un aviso para no perder cambios)
+if ("serviceWorker" in navigator) {
+  const habiaControl = !!navigator.serviceWorker.controller;
+  window.addEventListener("load", () => navigator.serviceWorker.register("sw.js").then(reg => {
+    const revisar = () => reg.update().catch(() => {});
+    document.addEventListener("visibilitychange", () => { if (document.visibilityState === "visible") revisar(); });
+    setInterval(revisar, 5 * 60 * 1000);
+  }).catch(() => {}));
+  navigator.serviceWorker.addEventListener("controllerchange", () => {
+    if (!habiaControl) return;
+    const ocupado = document.getElementById("editor") && !document.getElementById("editor").classList.contains("hidden");
+    if (!ocupado) { location.reload(); return; }
+    if (document.getElementById("upd-bar")) return;
+    const b = document.createElement("div"); b.id = "upd-bar"; b.className = "upd-bar";
+    b.innerHTML = 'Hay una versión nueva de la app. <button type="button" class="btn small">Actualizar</button>';
+    b.querySelector("button").onclick = () => location.reload();
+    document.body.appendChild(b);
+  });
+}
 let installEvt = null;
 window.addEventListener("beforeinstallprompt", e => { e.preventDefault(); installEvt = e; $("btn-install").classList.remove("hidden"); });
 $("btn-install").addEventListener("click", async () => { if (!installEvt) return; installEvt.prompt(); await installEvt.userChoice; installEvt = null; $("btn-install").classList.add("hidden"); });

@@ -454,3 +454,5 @@ body.sv-open{overflow:hidden}
   .pub-cap{max-height:none}
 }
 #sv-save{background:transparent;color:#fff;border-color:rgba(255,255,255,.7);flex:none}
+.upd-bar{position:fixed;left:50%;transform:translateX(-50%);bottom:calc(80px + env(safe-area-inset-bottom));z-index:90;background:var(--gris);color:var(--arena);padding:10px 14px;border-radius:10px;display:flex;align-items:center;gap:10px;font-size:14px;box-shadow:0 6px 20px rgba(0,0,0,.25);width:max-content;max-width:calc(100vw - 24px)}
+.upd-bar .btn{background:var(--terracota);color:#fff;border-color:var(--terracota)}
