@@ -218,7 +218,7 @@ function renderAll(fromRemote){
   if (view === "parrilla") renderTable();
   if (view === "feed") renderFeed();
   if (view === "resumen") renderResumen();
-  if (view === "ajustes") { renderOpts(); renderTeam(); loadUso(); }
+  if (view === "ajustes") { renderOpts(); renderTeam(); if (esAdmin) loadUso(); }
 }
 document.addEventListener("focusout", () => setTimeout(() => { if (pendingRender && !$("tbody").contains(document.activeElement)) renderAll(); }, 0));
 let rz; window.addEventListener("resize", () => { clearTimeout(rz); rz = setTimeout(() => { if (view === "parrilla") renderTable(); }, 200); });
@@ -642,8 +642,8 @@ $("opt-form").addEventListener("submit", async e => {
   const { error } = await sb.from("opciones").insert({ lista: l, valor: v, color: $("op-color").value, orden: (opciones[l] || []).length + 1 });
   if (error) banner(errMsg(error)); else { $("op-valor").value = ""; banner(""); loadOpciones(); }
 });
-let team = [];
-async function loadTeam(){ const { data } = await sb.from("miembros").select("*").order("created_at"); team = data || []; if (view === "ajustes") renderTeam(); }
+let team = [], esAdmin = false;
+async function loadTeam(){ const { data } = await sb.from("miembros").select("*").order("created_at"); team = data || []; const yo = team.find(m => m.email.toLowerCase() === ((user && user.email) || "").toLowerCase()); esAdmin = !!(yo && yo.admin); $("uso-card").classList.toggle("hidden", !esAdmin); if (view === "ajustes") { renderTeam(); if (esAdmin) loadUso(); } }
 function renderTeam(){
   $("team-list").innerHTML = team.length ? team.map(m => `<li><span class="grow">${esc(m.nombre ? m.nombre + " · " : "")}${esc(m.email)}</span>${m.email.toLowerCase() === ((user && user.email) || "").toLowerCase() ? '<span class="note">Tú</span>' : `<button class="icon-btn" data-rmt="${esc(m.email)}" title="Quitar" aria-label="Quitar ${esc(m.email)}">✕</button>`}</li>`).join("") : '<li class="note">No puedes ver el equipo hasta que tu correo esté en la lista.</li>';
 }

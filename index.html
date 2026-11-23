@@ -19,7 +19,7 @@
 <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@400;600&family=Nunito+Sans:wght@400;600;700&display=swap" rel="stylesheet">
 <link rel="preload" href="fonts/the-seasons-regular.woff2" as="font" type="font/woff2" crossorigin>
 <link rel="preload" href="fonts/gotham-rounded-light.woff2" as="font" type="font/woff2" crossorigin>
-<link rel="stylesheet" href="styles.css?v=8">
+<link rel="stylesheet" href="styles.css?v=9">
 </head>
 <body>
 <!-- Acceso -->
@@ -170,7 +170,7 @@
           <button class="btn small" type="submit">Agregar</button>
         </form>
       </section>
-      <section class="card">
+      <section class="card hidden" id="uso-card">
         <h3>Espacio usado</h3>
         <p class="note">El plan gratuito incluye 1 GB para imágenes.</p>
         <div class="meter" role="meter" aria-label="Espacio usado" aria-valuemin="0" aria-valuemax="100" id="st-meter"><span id="st-bar"></span></div>
@@ -256,7 +256,7 @@
 </dialog>
 
 <script src="lib/supabase.js"></script>
-<script src="config.js?v=8"></script>
-<script src="app.js?v=8"></script>
+<script src="config.js?v=9"></script>
+<script src="app.js?v=9"></script>
 </body>
 </html>
