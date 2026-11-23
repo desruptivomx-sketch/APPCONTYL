@@ -21,7 +21,7 @@
 <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@400;600&family=Nunito+Sans:wght@400;600;700&display=swap" rel="stylesheet">
 <link rel="preload" href="fonts/the-seasons-regular.woff2" as="font" type="font/woff2" crossorigin>
 <link rel="preload" href="fonts/gotham-rounded-light.woff2" as="font" type="font/woff2" crossorigin>
-<link rel="stylesheet" href="styles.css?v=12">
+<link rel="stylesheet" href="styles.css?v=13">
 </head>
 <body>
 <!-- Pantalla de carga: se ve hasta que la app decide si mostrar la entrada o la parrilla -->
@@ -243,6 +243,16 @@
     <label for="e-comentarios">Comentarios<textarea id="e-comentarios" rows="3"></textarea></label>
     <label for="e-contenido">Contenido (link del material)<textarea id="e-contenido" rows="2"></textarea></label>
     <p class="note status-line" id="e-msg" role="status"></p>
+    <p class="note" id="e-last"></p>
+    <section class="coments" aria-labelledby="c-title">
+      <h4 id="c-title">Conversación del equipo</h4>
+      <ol class="c-list" id="c-list"></ol>
+      <form class="c-form" id="c-form" novalidate>
+        <label for="c-text" class="sr">Escribe un comentario</label>
+        <textarea id="c-text" rows="2" placeholder="Escribe un mensaje para el equipo…" maxlength="4000"></textarea>
+        <button class="btn small" type="submit" id="c-send">Enviar</button>
+      </form>
+    </section>
     <button class="btn ghost small del" id="e-del" type="button">🗑 Eliminar este post</button>
   </div>
 </aside>
@@ -264,7 +274,7 @@
 </dialog>
 
 <script src="lib/supabase.js"></script>
-<script src="config.js?v=12"></script>
-<script src="app.js?v=12"></script>
+<script src="config.js?v=13"></script>
+<script src="app.js?v=13"></script>
 </body>
 </html>

@@ -65,7 +65,7 @@ const isMobile = () => window.matchMedia("(max-width:760px)").matches;
 
 /* ---------- Estado ---------- */
 let user = null, posts = [], filters = {}, sortKey = "fecha", sortDir = 1, view = "parrilla";
-let pendingRender = false, current = null, pendingFile = null, pendingUrl = null, channel = null;
+let comentarios = [], pendingRender = false, current = null, pendingFile = null, pendingUrl = null, channel = null;
 
 /* ---------- Imágenes: URLs firmadas con caché y miniaturas ---------- */
 const URL_KEY = "parrilla-urls-v1";
@@ -182,7 +182,7 @@ async function start(){
   setView(location.hash.replace("#","") || "parrilla");
   const { data: yo, error: e1 } = await sb.from("miembros").select("email").limit(1);
   if (e1 || !yo || !yo.length) banner("Tu correo (" + user.email + ") todavía no está en el equipo. Pide a alguien del equipo que lo agregue en Ajustes → Equipo y vuelve a abrir la app.");
-  await Promise.all([loadOpciones(), loadPosts(), loadTeam()]);
+  await Promise.all([loadOpciones(), loadPosts(), loadTeam(), loadComentarios()]);
   subscribe();
 }
 async function loadOpciones(){
@@ -210,6 +210,12 @@ function subscribe(){
       renderAll(true);
     })
     .on("postgres_changes", { event: "*", schema: "public", table: "opciones" }, () => loadOpciones())
+    .on("postgres_changes", { event: "*", schema: "public", table: "comentarios" }, payload => {
+      if (payload.eventType === "DELETE") comentarios = comentarios.filter(c => c.id !== payload.old.id);
+      else if (!comentarios.find(c => c.id === payload.new.id)) comentarios.push(payload.new);
+      if (current) renderComentarios();
+      renderAll(true);
+    })
     .subscribe();
 }
 document.addEventListener("visibilitychange", () => { if (document.visibilityState === "visible" && user) loadPosts(); });
@@ -320,12 +326,12 @@ function renderBody(){
         <span class="pbody">
           <span class="pdate">${esc(p.dia ? p.dia + " · " : "")}${fmtCorto(p.fecha)}${p.semana ? " · " + esc(p.semana) : ""}</span>
           <span class="pcopy${p.copy ? "" : " empty"}">${esc(p.copy || "Sin copy")}</span>
-          <span class="pchips">${chip("tipo", p.tipo)}${chip("pilar", p.pilar)}${chip("status", p.status)}${chip("cumplio", p.cumplio)}</span>
+          <span class="pchips">${chip("tipo", p.tipo)}${chip("pilar", p.pilar)}${chip("status", p.status)}${chip("cumplio", p.cumplio)}${nComent(p.id) ? `<span class="cbadge">💬 ${nComent(p.id)}</span>` : ""}</span>
         </span></button></li>`;
     }).join("") : `<li class="empty-state">${emptyMsg}</li>`;
     return;
   }
-  $("tbody").innerHTML = rows.length ? rows.map(p => `<tr data-id="${p.id}">${COLS.map(c => `<td class="c-${c.k}${c.sticky ? " sticky" : ""}">${cellHtml(p, c)}</td>`).join("")}<td class="c-acc"><button class="icon-btn" data-edit="${p.id}" title="Abrir editor" aria-label="Abrir editor">✎</button><button class="icon-btn" data-del="${p.id}" title="Eliminar post" aria-label="Eliminar post">🗑</button></td></tr>`).join("")
+  $("tbody").innerHTML = rows.length ? rows.map(p => `<tr data-id="${p.id}">${COLS.map(c => `<td class="c-${c.k}${c.sticky ? " sticky" : ""}">${cellHtml(p, c)}</td>`).join("")}<td class="c-acc"><button class="icon-btn" data-edit="${p.id}" title="Abrir editor y comentarios" aria-label="Abrir editor">✎${nComent(p.id) ? `<span class="cbadge"> 💬${nComent(p.id)}</span>` : ""}</button><button class="icon-btn" data-del="${p.id}" title="Eliminar post" aria-label="Eliminar post">🗑</button></td></tr>`).join("")
     : `<tr><td colspan="${COLS.length + 1}" style="padding:28px;text-align:center;color:var(--chocolate)">${emptyMsg}</td></tr>`;
 }
 $("cards").addEventListener("click", e => { const b = e.target.closest("[data-open]"); if (!b) return; const p = posts.find(x => x.id === b.dataset.open); if (p) openEditor(p); });
@@ -475,6 +481,7 @@ function openEditor(p){
   ["dia","semana","mes","tipo","pilar","status","cumplio"].forEach(k => { $("e-"+k).innerHTML = optionsHtml(k === "dia" ? "dia" : k === "mes" ? "mes" : k, p[k], true); $("e-"+k).value = p[k] || ""; });
   ["fecha","copy","caption","inspo","comentarios","contenido"].forEach(k => { $("e-"+k).value = p[k] || ""; });
   setPreview(urlOf(p.imagen_path) || thumbUrl(p.imagen_path)); $("e-rmimg").classList.toggle("hidden", !p.imagen_path); emsg("");
+  renderUltimo(); renderComentarios(); $("c-text").value = "";
   $("editor").classList.remove("hidden"); $("scrim").classList.remove("hidden");
   if (isMobile()) document.body.style.overflow = "hidden";
   $("editor").querySelector(".ed-body").scrollTop = 0;
@@ -494,8 +501,8 @@ window.addEventListener("popstate", () => { if (!$("editor").classList.contains(
 $("e-close").addEventListener("click", () => closeEditor());
 $("scrim").addEventListener("click", () => closeEditor());
 document.addEventListener("keydown", e => { if (e.key === "Escape" && !$("editor").classList.contains("hidden") && !document.querySelector("dialog[open]")) closeEditor(); });
-$("editor").addEventListener("input", () => { editorDirty = true; });
-$("editor").addEventListener("change", e => { editorDirty = true; if (e.target.id === "e-fecha" && e.target.value) { if (!$("e-dia").value) $("e-dia").value = diaDe(e.target.value); if (!$("e-mes").value) $("e-mes").value = mesDe(e.target.value); } });
+$("editor").addEventListener("input", e => { if (!e.target.closest(".coments")) editorDirty = true; });
+$("editor").addEventListener("change", e => { if (e.target.closest(".coments")) return; editorDirty = true; if (e.target.id === "e-fecha" && e.target.value) { if (!$("e-dia").value) $("e-dia").value = diaDe(e.target.value); if (!$("e-mes").value) $("e-mes").value = mesDe(e.target.value); } });
 $("e-prev").addEventListener("click", () => moveBy(-1));
 $("e-next").addEventListener("click", () => moveBy(1));
 $("e-preview").addEventListener("click", () => $("e-file").click());
@@ -535,7 +542,7 @@ $("e-save").addEventListener("click", async () => {
     if (error) throw error;
     if (patch.imagen_path) { await signedUrls(allImagePaths([{ imagen_path: patch.imagen_path }])); if (old) sb.storage.from(CFG.bucket).remove([old, thumbOf(old)]); }
     Object.assign(current, patch); const i = posts.findIndex(p => p.id === current.id); if (i >= 0) posts[i] = current;
-    pendingFile = null; editorDirty = false; emsg("Guardado.");
+    pendingFile = null; editorDirty = false; emsg("Guardado."); current.updated_by = user.email; current.updated_at = new Date().toISOString(); renderUltimo();
     $("e-title").textContent = current.fecha ? `Post del ${fmtCorto(current.fecha)}` : "Post nuevo";
     setPreview(urlOf(current.imagen_path) || thumbUrl(current.imagen_path)); $("e-rmimg").classList.toggle("hidden", !current.imagen_path);
     renderAll();
@@ -550,6 +557,55 @@ $("e-rmimg").addEventListener("click", async () => {
   sb.storage.from(CFG.bucket).remove([old, thumbOf(old)]); current.imagen_path = null; setPreview(""); $("e-rmimg").classList.add("hidden"); emsg("Imagen quitada."); renderAll();
 });
 $("e-del").addEventListener("click", () => { if (current) { editorDirty = false; confirmDelete(current); } });
+
+
+/* ---------- Comentarios ---------- */
+async function loadComentarios(){
+  const { data, error } = await sb.from("comentarios").select("*").order("created_at");
+  if (!error) { comentarios = data || []; renderAll(); }
+}
+const nComent = id => comentarios.reduce((n, c) => n + (c.post_id === id ? 1 : 0), 0);
+function nombreDe(email){
+  const m = team.find(t => t.email.toLowerCase() === String(email || "").toLowerCase());
+  return (m && m.nombre) || String(email || "Alguien").split("@")[0];
+}
+function cuando(ts){
+  if (!ts) return "";
+  const d = new Date(ts), diff = (Date.now() - d) / 60000;
+  if (diff < 1) return "ahora";
+  if (diff < 60) return `hace ${Math.round(diff)} min`;
+  if (diff < 1440 && d.getDate() === new Date().getDate()) return `hoy ${d.toLocaleTimeString("es-MX", { hour: "2-digit", minute: "2-digit" })}`;
+  return d.toLocaleString("es-MX", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" });
+}
+function renderUltimo(){
+  const p = current; if (!p) return;
+  $("e-last").textContent = p.updated_by ? `Último cambio: ${nombreDe(p.updated_by)} · ${cuando(p.updated_at)}` : "";
+}
+function renderComentarios(){
+  if (!current) return;
+  const list = comentarios.filter(c => c.post_id === current.id).sort((a, b) => String(a.created_at).localeCompare(String(b.created_at)));
+  const yo = ((user && user.email) || "").toLowerCase();
+  $("c-list").innerHTML = list.length ? list.map(c => `<li class="c-item${c.autor.toLowerCase() === yo ? " mio" : ""}"><div class="c-meta"><span><b>${esc(nombreDe(c.autor))}</b> · ${esc(cuando(c.created_at))}</span>${c.autor.toLowerCase() === yo ? `<button type="button" class="c-del" data-cdel="${c.id}">Borrar</button>` : ""}</div><div class="c-txt">${esc(c.texto)}</div></li>`).join("")
+    : '<li class="c-empty">Todavía no hay mensajes sobre este post.</li>';
+}
+$("c-form").addEventListener("submit", async e => {
+  e.preventDefault();
+  const t = $("c-text").value.trim(); if (!t || !current) return;
+  $("c-send").disabled = true;
+  const { data, error } = await sb.from("comentarios").insert({ post_id: current.id, texto: t, autor: user.email }).select().single();
+  $("c-send").disabled = false;
+  if (error) { emsg(errMsg(error), true); return; }
+  if (!comentarios.find(c => c.id === data.id)) comentarios.push(data);
+  $("c-text").value = ""; renderComentarios(); renderAll();
+  const l = $("c-list"); l.lastElementChild && l.lastElementChild.scrollIntoView({ block: "nearest" });
+});
+$("c-text").addEventListener("keydown", e => { if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) { e.preventDefault(); $("c-form").requestSubmit(); } });
+$("c-list").addEventListener("click", async e => {
+  const b = e.target.closest("[data-cdel]"); if (!b) return;
+  const { error } = await sb.from("comentarios").delete().eq("id", b.dataset.cdel);
+  if (error) { emsg(errMsg(error), true); return; }
+  comentarios = comentarios.filter(c => c.id !== b.dataset.cdel); renderComentarios(); renderAll();
+});
 
 /* ---------- Resumen ---------- */
 function crossTable(el, rowsKey, rowVals, colKey, colVals, rowsFilter){

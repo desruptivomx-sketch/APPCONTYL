@@ -278,3 +278,18 @@ body{font-weight:300}
 .boot{position:fixed;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:14px;background:var(--arena);z-index:100;padding:24px;text-align:center}
 .boot img{width:72px;height:auto}
 @media (prefers-reduced-motion:no-preference){.boot img{animation:latido 1.6s ease-in-out infinite}@keyframes latido{50%{opacity:.45}}}
+
+/* Comentarios */
+.coments{border-top:1px solid var(--linea);padding-top:12px;display:flex;flex-direction:column;gap:10px}
+.coments h4{font-family:var(--display);font-weight:400;font-size:18px;margin:0}
+.c-list{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:8px}
+.c-item{background:#fff;border:1px solid var(--linea);border-radius:10px;padding:8px 10px}
+.c-item.mio{background:#FBF1EC;border-color:#EBD3C8}
+.c-meta{display:flex;justify-content:space-between;gap:8px;font-size:12px;color:var(--taupe)}
+.c-meta b{color:var(--chocolate);font-weight:600}
+.c-txt{white-space:pre-wrap;overflow-wrap:anywhere;margin-top:3px}
+.c-del{background:none;border:0;color:var(--taupe);font-size:12px;padding:0;text-decoration:underline}
+.c-form{display:flex;gap:8px;align-items:flex-end}
+.c-form textarea{flex:1;min-height:44px}
+.c-empty{font-size:13px;color:var(--taupe)}
+.cbadge{display:inline-flex;align-items:center;gap:3px;font-size:11px;color:var(--chocolate);font-weight:600}
