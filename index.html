@@ -21,7 +21,7 @@
 <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@400;600&family=Nunito+Sans:wght@400;600;700&display=swap" rel="stylesheet">
 <link rel="preload" href="fonts/the-seasons-regular.woff2" as="font" type="font/woff2" crossorigin>
 <link rel="preload" href="fonts/gotham-rounded-light.woff2" as="font" type="font/woff2" crossorigin>
-<link rel="stylesheet" href="styles.css?v=21">
+<link rel="stylesheet" href="styles.css?v=22">
 </head>
 <body>
 <!-- Pantalla de carga: se ve hasta que la app decide si mostrar la entrada o la parrilla -->
@@ -262,6 +262,16 @@
   </div>
 </aside>
 
+<div id="sv" class="sv hidden" role="dialog" aria-modal="true" aria-label="Historias">
+  <div class="sv-frame">
+    <div class="sv-bars" id="sv-bars"></div>
+    <div class="sv-top"><span class="sv-av"><img src="icons/simbolo-arena.png" alt=""></span><div class="sv-who"><b>yucatalove</b> <span id="sv-date"></span></div><span class="chip" id="sv-status"></span><button type="button" class="sv-x" id="sv-close" aria-label="Cerrar">✕</button></div>
+    <div class="sv-media" id="sv-media"></div>
+    <button type="button" class="sv-nav prev" id="sv-prev" aria-label="Anterior"></button>
+    <button type="button" class="sv-nav next" id="sv-next" aria-label="Siguiente"></button>
+    <div class="sv-foot"><p id="sv-copy"></p><button type="button" class="btn small" id="sv-edit">✎ Editar</button></div>
+  </div>
+</div>
 <dialog id="dlg" aria-labelledby="dlg-title">
   <form method="dialog" class="dlg-body">
     <h3 id="dlg-title">Editar</h3>
@@ -280,7 +290,7 @@
 
 <div id="print-area" aria-hidden="true"></div>
 <script src="lib/supabase.js"></script>
-<script src="config.js?v=21"></script>
-<script src="app.js?v=21"></script>
+<script src="config.js?v=22"></script>
+<script src="app.js?v=22"></script>
 </body>
 </html>

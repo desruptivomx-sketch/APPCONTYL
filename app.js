@@ -483,7 +483,47 @@ function renderFeed(){
 $("feed-grid").addEventListener("click", e => { const t = e.target.closest(".tile"); if (!t) return; const p = posts.find(x => x.id === t.dataset.id); if (p) openEditor(p); });
 $("stories").addEventListener("click", async e => {
   if (e.target.closest("#story-add")) { await nuevoDesdeFeed("Historia"); return; }
-  const t = e.target.closest(".story"); if (!t) return; const p = posts.find(x => x.id === t.dataset.id); if (p) openEditor(p); });
+  const t = e.target.closest(".story"); if (!t) return; abrirHistorias(t.dataset.id); });
+
+/* ---------- Visor de historias (como en Instagram) ---------- */
+let svList = [], svIdx = 0, svTimer = null, svStart = 0;
+const SV_MS = 5000;
+function historiasVisibles(){ return feedList().filter(p => p.tipo === "Historia").sort((a, b) => String(a.fecha || "").localeCompare(String(b.fecha || ""))); }
+async function abrirHistorias(id){
+  svList = historiasVisibles(); svIdx = Math.max(0, svList.findIndex(p => p.id === id));
+  await signedUrls(svList.map(p => p.imagen_path).filter(Boolean));
+  $("sv").classList.remove("hidden"); document.body.classList.add("sv-open");
+  history.pushState({ sv: true }, "", location.hash);
+  mostrarHistoria();
+}
+function mostrarHistoria(){
+  const p = svList[svIdx]; if (!p) return cerrarHistorias();
+  $("sv-bars").innerHTML = svList.map((_, i) => `<span><i style="width:${i < svIdx ? 100 : 0}%"></i></span>`).join("");
+  $("sv-date").textContent = fmtCorto(p.fecha) || "sin fecha";
+  const st = p.status || "", sc = colorDe("status", st) || "#F6F6F4";
+  const chip = $("sv-status"); chip.textContent = st; chip.style.display = st ? "" : "none"; chip.style.background = sc; chip.style.color = textOn(sc);
+  const src = urlOf(p.imagen_path);
+  $("sv-media").innerHTML = src ? `<img src="${esc(src)}" alt="">` : `<div class="sv-empty"><div class="label-sm">${esc(p.pilar || "")}</div><p>${esc(p.copy || "Historia sin imagen")}</p><span>Toca ✎ Editar para subir la imagen</span></div>`;
+  $("sv-copy").textContent = p.copy || "";
+  clearTimeout(svTimer); svStart = Date.now();
+  const bar = $("sv-bars").children[svIdx].firstElementChild;
+  requestAnimationFrame(() => { bar.style.transition = `width ${SV_MS}ms linear`; bar.style.width = "100%"; });
+  svTimer = setTimeout(() => moverHistoria(1), SV_MS);
+}
+function moverHistoria(d){ const n = svIdx + d; if (n < 0) { svIdx = 0; return mostrarHistoria(); } if (n >= svList.length) return cerrarHistorias(); svIdx = n; mostrarHistoria(); }
+function cerrarHistorias(fromPop){
+  if ($("sv").classList.contains("hidden")) return;
+  clearTimeout(svTimer); $("sv").classList.add("hidden"); document.body.classList.remove("sv-open");
+  if (!fromPop && history.state && history.state.sv) history.back();
+}
+$("sv-prev").addEventListener("click", () => moverHistoria(-1));
+$("sv-next").addEventListener("click", () => moverHistoria(1));
+$("sv-close").addEventListener("click", () => cerrarHistorias());
+$("sv-edit").addEventListener("click", () => { const p = svList[svIdx]; cerrarHistorias(true); if (history.state && history.state.sv) history.replaceState(null, "", location.hash); if (p) openEditor(p); });
+$("sv").addEventListener("click", e => { if (e.target.id === "sv") cerrarHistorias(); });
+window.addEventListener("popstate", () => cerrarHistorias(true));
+document.addEventListener("keydown", e => { if ($("sv").classList.contains("hidden")) return;
+  if (e.key === "Escape") cerrarHistorias(); else if (e.key === "ArrowRight") moverHistoria(1); else if (e.key === "ArrowLeft") moverHistoria(-1); });
 $("feed-grid").addEventListener("dragstart", e => { const t = e.target.closest(".tile"); if (t) { e.dataTransfer.setData("text/plain", t.dataset.id); e.dataTransfer.effectAllowed = "move"; } });
 $("feed-grid").addEventListener("dragover", e => { const t = e.target.closest(".tile"); if (t) { e.preventDefault(); t.classList.add("drag-over"); } });
 $("feed-grid").addEventListener("dragleave", e => { const t = e.target.closest(".tile"); if (t) t.classList.remove("drag-over"); });
