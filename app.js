@@ -685,7 +685,7 @@ function openEditor(p){
   ["fecha","copy","caption","inspo","comentarios","contenido"].forEach(k => { $("e-"+k).value = p[k] || ""; });
   LINK_FIELDS.forEach(k => { $("e-"+k+"-links").innerHTML = chipsLinks(p[k]); });
   pvIdx = 0; renderPreview(); renderSlides(); $("e-rmimg").classList.toggle("hidden", !p.imagen_path); emsg("");
-  cargarHistorial();
+  cargarHistorial(); iaLimpiar();
   renderUltimo(); renderComentarios(); $("c-text").value = "";
   $("editor").classList.remove("hidden"); $("scrim").classList.remove("hidden");
   if (isMobile()) document.body.style.overflow = "hidden";
@@ -706,8 +706,8 @@ window.addEventListener("popstate", () => { if (!$("editor").classList.contains(
 $("e-close").addEventListener("click", () => closeEditor());
 $("scrim").addEventListener("click", () => closeEditor());
 document.addEventListener("keydown", e => { if (e.key === "Escape" && !$("editor").classList.contains("hidden") && !document.querySelector("dialog[open]")) closeEditor(); });
-$("editor").addEventListener("input", e => { if (!e.target.closest(".coments")) editorDirty = true; if (e.target.id === "e-inspo" || e.target.id === "e-contenido") $(e.target.id + "-links").innerHTML = chipsLinks(e.target.value); });
-$("editor").addEventListener("change", e => { if (e.target.closest(".coments")) return; editorDirty = true; if (e.target.id === "e-fecha" && e.target.value) { if (!$("e-dia").value) $("e-dia").value = diaDe(e.target.value); if (!$("e-mes").value) $("e-mes").value = mesDe(e.target.value); } });
+$("editor").addEventListener("input", e => { if (!e.target.closest(".coments, .ia")) editorDirty = true; if (e.target.id === "e-inspo" || e.target.id === "e-contenido") $(e.target.id + "-links").innerHTML = chipsLinks(e.target.value); });
+$("editor").addEventListener("change", e => { if (e.target.closest(".coments, .ia")) return; editorDirty = true; if (e.target.id === "e-fecha" && e.target.value) { if (!$("e-dia").value) $("e-dia").value = diaDe(e.target.value); if (!$("e-mes").value) $("e-mes").value = mesDe(e.target.value); } });
 $("e-prev").addEventListener("click", () => moveBy(-1));
 $("e-next").addEventListener("click", () => moveBy(1));
 $("e-preview").addEventListener("click", () => { if (pvIdx === 0) $("e-file").click(); });
@@ -831,6 +831,51 @@ $("e-files").addEventListener("change", async e => {
   if (!nuevas.length) return;
   await signedUrls(allImagePaths([{ imagenes: nuevas }]));
   if (await guardarSlides(s.concat(nuevas))) { pvIdx = s.length; renderPreview(); renderSlides(); emsg(`${nuevas.length === 1 ? "Imagen agregada" : nuevas.length + " imágenes agregadas"} al carrusel.`); }
+});
+
+/* ---------- Asistente de IA (Grok / Claude vía función de Supabase) ---------- */
+let iaOpciones = [], iaAccion = "", iaOcupado = false;
+const IA_DESTINO = { caption: "caption", pulir_caption: "caption", pulir_idea: "copy", hooks: "caption" };
+function iaLimpiar(){ iaOpciones = []; $("ia-out").innerHTML = ""; $("ia-extra").value = ""; }
+async function iaPedir(accion){
+  if (!current || iaOcupado) return;
+  const post = { tipo: $("e-tipo").value, pilar: $("e-pilar").value, fecha: $("e-fecha").value, copy: $("e-copy").value, caption: $("e-caption").value, inspo: $("e-inspo").value, comentarios: $("e-comentarios").value };
+  if (accion === "pulir_caption" && !post.caption.trim()) { $("ia-out").innerHTML = '<p class="note warn">Primero escribe un caption para poder pulirlo, o usa “Sugerir caption”.</p>'; return; }
+  if (accion === "pulir_idea" && !post.copy.trim()) { $("ia-out").innerHTML = '<p class="note warn">Escribe la idea en el campo Copy y la pulo.</p>'; return; }
+  iaOcupado = true; iaAccion = accion;
+  document.querySelectorAll("#ia [data-ia]").forEach(b => b.disabled = true);
+  $("ia-out").innerHTML = '<p class="note ia-cargando">Pensando opciones…</p>';
+  try {
+    const { data, error } = await sb.functions.invoke("ia", { body: { accion, post, idioma: $("ia-lang").value, instruccion: $("ia-extra").value.trim() } });
+    let res = data;
+    if (error) { try { res = await error.context.json(); } catch (_) { res = { error: error.message }; } }
+    if (!res || res.error) {
+      $("ia-out").innerHTML = `<p class="note warn">${esc(res && res.sin_clave ? "El asistente todavía no está activado: falta guardar la clave de Grok en Supabase." : (res && res.error) || "No se pudo generar. Intenta de nuevo.")}</p>`;
+      return;
+    }
+    iaOpciones = res.opciones || [];
+    const dest = IA_DESTINO[accion];
+    $("ia-out").innerHTML = iaOpciones.map((o, i) => `<div class="ia-op"><p>${esc(o)}</p><div class="ia-acc">
+        <button type="button" class="btn small" data-usar="${i}" data-campo="${dest}">${dest === "copy" ? "Usar como copy" : accion === "hooks" ? "Poner al inicio del caption" : "Usar como caption"}</button>
+        <button type="button" class="btn ghost small" data-copiar="${i}">Copiar</button></div></div>`).join("")
+      + `<p class="note">Sugerido por ${esc(res.motor || "IA")}. Revisa antes de guardar.</p>`;
+  } catch (err) { $("ia-out").innerHTML = `<p class="note warn">${esc(errMsg(err))}</p>`; }
+  finally { iaOcupado = false; document.querySelectorAll("#ia [data-ia]").forEach(b => b.disabled = false); }
+}
+$("ia").addEventListener("click", async e => {
+  const b = e.target.closest("[data-ia]"); if (b) { iaPedir(b.dataset.ia); return; }
+  const u = e.target.closest("[data-usar]");
+  if (u) {
+    const t = iaOpciones[+u.dataset.usar]; if (t == null) return;
+    const campo = u.dataset.campo === "copy" ? $("e-copy") : $("e-caption");
+    if (iaAccion === "hooks") { const resto = campo.value.replace(/^[^\n]*\n?/, ""); campo.value = t + (resto ? "\n" + resto : ""); }
+    else campo.value = t;
+    editorDirty = true; campo.dispatchEvent(new Event("input", { bubbles: true }));
+    emsg("Texto puesto en " + (u.dataset.campo === "copy" ? "Copy" : "Caption") + ". Revisa y toca Guardar.");
+    return;
+  }
+  const c = e.target.closest("[data-copiar]");
+  if (c) { const ok = await copiarTexto(iaOpciones[+c.dataset.copiar] || ""); c.textContent = ok ? "Copiado ✓" : "No se pudo"; setTimeout(() => c.textContent = "Copiar", 1500); }
 });
 
 /* ---------- Historial de cambios ---------- */

@@ -21,7 +21,7 @@
 <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@400;600&family=Nunito+Sans:wght@400;600;700&display=swap" rel="stylesheet">
 <link rel="preload" href="fonts/the-seasons-regular.woff2" as="font" type="font/woff2" crossorigin>
 <link rel="preload" href="fonts/gotham-rounded-light.woff2" as="font" type="font/woff2" crossorigin>
-<link rel="stylesheet" href="styles.css?v=26">
+<link rel="stylesheet" href="styles.css?v=27">
 </head>
 <body>
 <!-- Pantalla de carga: se ve hasta que la app decide si mostrar la entrada o la parrilla -->
@@ -252,6 +252,17 @@
     </div>
     <label for="e-copy">Copy<textarea id="e-copy" rows="3"></textarea></label>
     <label for="e-caption">Caption<textarea id="e-caption" rows="7"></textarea></label>
+    <div class="ia" id="ia">
+      <div class="ia-head"><span class="ia-t">✨ Asistente de IA</span><label class="ia-lang">Idioma <select id="ia-lang"><option value="en">Inglés</option><option value="es">Español</option></select></label></div>
+      <div class="ia-btns">
+        <button type="button" class="btn small" data-ia="caption">Sugerir caption</button>
+        <button type="button" class="btn ghost small" data-ia="pulir_caption">Pulir caption</button>
+        <button type="button" class="btn ghost small" data-ia="pulir_idea">Pulir idea / copy</button>
+        <button type="button" class="btn ghost small" data-ia="hooks">Ganchos</button>
+      </div>
+      <input type="text" id="ia-extra" placeholder="Indicación opcional: más corto, mencionar la hacienda, tono más emotivo…">
+      <div class="ia-out" id="ia-out" aria-live="polite"></div>
+    </div>
     <label for="e-inspo">Inspo / Referencia<textarea id="e-inspo" rows="2" placeholder="Pega uno o varios enlaces"></textarea></label>
     <div class="lnks" id="e-inspo-links"></div>
     <label for="e-comentarios">Comentarios<textarea id="e-comentarios" rows="3"></textarea></label>
@@ -317,7 +328,7 @@
 
 <div id="print-area" aria-hidden="true"></div>
 <script src="lib/supabase.js"></script>
-<script src="config.js?v=26"></script>
-<script src="app.js?v=26"></script>
+<script src="config.js?v=27"></script>
+<script src="app.js?v=27"></script>
 </body>
 </html>
