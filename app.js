@@ -118,6 +118,36 @@ const fmtCorto = f => { if(!f) return "Sin fecha"; const [y,m,d]=f.split("-"); r
 function diaDe(f){ if(!f) return null; const d=new Date(f+"T12:00:00"); return DIAS[(d.getDay()+6)%7]; }
 function mesDe(f){ return f ? MESES[+f.split("-")[1]-1] : null; }
 
+
+/* ---------- Enlaces ---------- */
+const URL_RE = /\bhttps?:\/\/[^\s<>"']+/gi;
+const LINK_FIELDS = ["inspo", "contenido"];
+function etiquetaLink(u){
+  try {
+    const x = new URL(u), h = x.hostname.replace(/^www\./, "");
+    if (/drive\.google|docs\.google/.test(h)) return /folders/.test(x.pathname) ? "Carpeta de Drive" : "Archivo de Drive";
+    if (/instagram\.com/.test(h)) return /\/reel/.test(x.pathname) ? "Reel de Instagram" : "Post de Instagram";
+    if (/pinterest\./.test(h)) return "Pinterest";
+    if (/tiktok\.com/.test(h)) return "TikTok";
+    if (/canva\.com/.test(h)) return "Canva";
+    if (/dropbox\.com/.test(h)) return "Dropbox";
+    return h;
+  } catch (_) { return "Enlace"; }
+}
+const limpiaUrl = u => u.replace(/[.,;:)\]]+$/, "");
+function linksDe(text){ return [...String(text || "").matchAll(URL_RE)].map(m => limpiaUrl(m[0])); }
+// Texto con los enlaces convertidos en hipervínculos (para leer completo)
+function linkify(text){
+  let out = "", last = 0; const t = String(text || "");
+  for (const m of t.matchAll(URL_RE)) { const u = limpiaUrl(m[0]); out += esc(t.slice(last, m.index)) + `<a href="${esc(u)}" target="_blank" rel="noopener">${esc(etiquetaLink(u))} ↗</a>`; last = m.index + u.length; }
+  return out + esc(t.slice(last));
+}
+// Chips cortos de enlaces (para tablas y tarjetas)
+function chipsLinks(text){
+  const ls = linksDe(text); if (!ls.length) return "";
+  return `<span class="lnks">${ls.map(u => `<a class="lnk" href="${esc(u)}" target="_blank" rel="noopener" title="${esc(u)}">${esc(etiquetaLink(u))} ↗</a>`).join("")}</span>`;
+}
+
 /* ---------- Acceso ---------- */
 let signupMode = false;
 function showAuth(){ hideBoot(); clearTimeout(bootTimer); $("app").classList.add("hidden"); $("recover").classList.add("hidden"); closeEditor(); $("auth").classList.remove("hidden"); }
@@ -307,6 +337,10 @@ function cellHtml(p, c){
     return `<select data-k="${c.k}" class="${v && col ? "chip-sel" : ""}" style="${style}" aria-label="${esc(c.label)}">${optionsHtml(c.list, v, true)}</select>`;
   }
   if (c.type === "thumb") { const u = thumbUrl(v); return v && u ? `<button class="icon-btn" data-img="${p.id}" title="Ver o cambiar imagen"><img class="thumb" src="${esc(u)}" alt="" loading="lazy" decoding="async"></button>` : `<button class="icon-btn" data-img="${p.id}" title="Subir imagen" aria-label="Subir imagen">＋</button>`; }
+  if (c.type === "long" && LINK_FIELDS.includes(c.k) && linksDe(v).length) {
+    const resto = String(v).replace(URL_RE, "").trim();
+    return `<div class="lcell">${chipsLinks(v)}${resto ? `<span class="lnote">${esc(resto)}</span>` : ""}<button class="icon-btn ledit" data-long="${c.k}" title="Editar enlaces" aria-label="Editar ${esc(c.label)}">✎</button></div>`;
+  }
   if (c.type === "long") {
     const isLink = /^https?:\/\/\S+$/.test(String(v || "").trim());
     if (isLink) return `<div style="display:flex;align-items:flex-start"><button class="txt" data-long="${c.k}" title="Ver completo y editar"><span class="clamp">${esc(v)}</span></button><a class="icon-btn" href="${esc(String(v).trim())}" target="_blank" rel="noopener" title="Abrir enlace" aria-label="Abrir enlace">↗</a></div>`;
@@ -321,20 +355,22 @@ function renderBody(){
   if (isMobile()) {
     $("cards").innerHTML = rows.length ? rows.map(p => {
       const u = thumbUrl(p.imagen_path);
-      return `<li><button class="pcard" data-open="${p.id}" type="button">
+      return `<li><div class="pcard" data-open="${p.id}" role="button" tabindex="0" aria-label="Abrir post del ${fmtCorto(p.fecha)}">
         <span class="pthumb${u ? " has" : ""}" style="${u ? `background-image:url('${esc(u)}')` : ""}">${u ? "" : "＋"}</span>
         <span class="pbody">
           <span class="pdate">${esc(p.dia ? p.dia + " · " : "")}${fmtCorto(p.fecha)}${p.semana ? " · " + esc(p.semana) : ""}</span>
           <span class="pcopy${p.copy ? "" : " empty"}">${esc(p.copy || "Sin copy")}</span>
+          ${(linksDe(p.contenido).length || linksDe(p.inspo).length) ? `<span class="lnks">${chipsLinks(p.contenido)}${chipsLinks(p.inspo)}</span>` : ""}
           <span class="pchips">${chip("tipo", p.tipo)}${chip("pilar", p.pilar)}${chip("status", p.status)}${chip("cumplio", p.cumplio)}${nComent(p.id) ? `<span class="cbadge">💬 ${nComent(p.id)}</span>` : ""}</span>
-        </span></button></li>`;
+        </span></div></li>`;
     }).join("") : `<li class="empty-state">${emptyMsg}</li>`;
     return;
   }
   $("tbody").innerHTML = rows.length ? rows.map(p => `<tr data-id="${p.id}">${COLS.map(c => `<td class="c-${c.k}${c.sticky ? " sticky" : ""}">${cellHtml(p, c)}</td>`).join("")}<td class="c-acc"><button class="icon-btn" data-edit="${p.id}" title="Abrir editor y comentarios" aria-label="Abrir editor">✎${nComent(p.id) ? `<span class="cbadge"> 💬${nComent(p.id)}</span>` : ""}</button><button class="icon-btn" data-del="${p.id}" title="Eliminar post" aria-label="Eliminar post">🗑</button></td></tr>`).join("")
     : `<tr><td colspan="${COLS.length + 1}" style="padding:28px;text-align:center;color:var(--chocolate)">${emptyMsg}</td></tr>`;
 }
-$("cards").addEventListener("click", e => { const b = e.target.closest("[data-open]"); if (!b) return; const p = posts.find(x => x.id === b.dataset.open); if (p) openEditor(p); });
+$("cards").addEventListener("keydown", e => { if ((e.key === "Enter" || e.key === " ") && e.target.matches(".pcard")) { e.preventDefault(); e.target.click(); } });
+$("cards").addEventListener("click", e => { if (e.target.closest("a")) return; const b = e.target.closest("[data-open]"); if (!b) return; const p = posts.find(x => x.id === b.dataset.open); if (p) openEditor(p); });
 $("tbody").addEventListener("change", e => {
   const el = e.target, tr = el.closest("tr"); if (!tr || !el.dataset.k) return;
   const id = tr.dataset.id, k = el.dataset.k, v = el.value || null;
@@ -480,6 +516,7 @@ function openEditor(p){
   $("e-title").textContent = p.fecha ? `Post del ${fmtCorto(p.fecha)}` : "Post nuevo";
   ["dia","semana","mes","tipo","pilar","status","cumplio"].forEach(k => { $("e-"+k).innerHTML = optionsHtml(k === "dia" ? "dia" : k === "mes" ? "mes" : k, p[k], true); $("e-"+k).value = p[k] || ""; });
   ["fecha","copy","caption","inspo","comentarios","contenido"].forEach(k => { $("e-"+k).value = p[k] || ""; });
+  LINK_FIELDS.forEach(k => { $("e-"+k+"-links").innerHTML = chipsLinks(p[k]); });
   setPreview(urlOf(p.imagen_path) || thumbUrl(p.imagen_path)); $("e-rmimg").classList.toggle("hidden", !p.imagen_path); emsg("");
   renderUltimo(); renderComentarios(); $("c-text").value = "";
   $("editor").classList.remove("hidden"); $("scrim").classList.remove("hidden");
@@ -501,7 +538,7 @@ window.addEventListener("popstate", () => { if (!$("editor").classList.contains(
 $("e-close").addEventListener("click", () => closeEditor());
 $("scrim").addEventListener("click", () => closeEditor());
 document.addEventListener("keydown", e => { if (e.key === "Escape" && !$("editor").classList.contains("hidden") && !document.querySelector("dialog[open]")) closeEditor(); });
-$("editor").addEventListener("input", e => { if (!e.target.closest(".coments")) editorDirty = true; });
+$("editor").addEventListener("input", e => { if (!e.target.closest(".coments")) editorDirty = true; if (e.target.id === "e-inspo" || e.target.id === "e-contenido") $(e.target.id + "-links").innerHTML = chipsLinks(e.target.value); });
 $("editor").addEventListener("change", e => { if (e.target.closest(".coments")) return; editorDirty = true; if (e.target.id === "e-fecha" && e.target.value) { if (!$("e-dia").value) $("e-dia").value = diaDe(e.target.value); if (!$("e-mes").value) $("e-mes").value = mesDe(e.target.value); } });
 $("e-prev").addEventListener("click", () => moveBy(-1));
 $("e-next").addEventListener("click", () => moveBy(1));
@@ -715,6 +752,8 @@ async function exportarPDF(){
       ${p.copy ? `<div class="lbl">Copy</div><div class="txt">${esc(p.copy)}</div>` : ""}
       ${p.caption ? `<div class="lbl">Caption</div><div class="txt">${esc(p.caption)}</div>` : ""}
       ${p.comentarios ? `<div class="lbl">Comentarios</div><div class="txt">${esc(p.comentarios)}</div>` : ""}
+      ${p.inspo ? `<div class="lbl">Inspo / Referencia</div><div class="txt">${linkify(p.inspo)}</div>` : ""}
+      ${p.contenido ? `<div class="lbl">Contenido</div><div class="txt">${linkify(p.contenido)}</div>` : ""}
     </div></article>`; }).join("") || "<p>No hay publicaciones con fecha en este mes.</p>"}</section>`;
     const area = $("print-area"); area.innerHTML = h;
     await Promise.all([...area.querySelectorAll("img")].map(img => img.complete ? null : new Promise(r => { img.onload = img.onerror = r; setTimeout(r, 8000); })));
