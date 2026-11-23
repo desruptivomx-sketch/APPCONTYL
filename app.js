@@ -676,6 +676,55 @@ $("view-resumen").addEventListener("click", async e => {
   renderCalendar(); openEditor(p);
 });
 
+
+/* ---------- Exportar mes a PDF ---------- */
+function tagHtml(name, v){ if (!v) return ""; const c = colorDe(name, v) || "#F6F6F4"; return `<span style="background:${c};color:${textOn(c)}">${esc(v)}</span>`; }
+async function exportarPDF(){
+  const btn = $("cal-pdf"); btn.disabled = true; btn.textContent = "Preparando…";
+  try {
+    const y = calRef.getFullYear(), m = calRef.getMonth(), pref = `${y}-${String(m + 1).padStart(2, "0")}-`;
+    const delMes = posts.filter(p => p.fecha && p.fecha.startsWith(pref)).sort((a, b) => a.fecha.localeCompare(b.fecha));
+    await signedUrls(allImagePaths(delMes));
+    const full = p => urlOf(p.imagen_path) || thumbUrl(p.imagen_path);
+    const cuenta = (k) => { const o = {}; delMes.forEach(p => { const v = p[k] || "Sin asignar"; o[v] = (o[v] || 0) + 1; }); return o; };
+    const porTipo = cuenta("tipo"), porStatus = cuenta("status");
+    const titulo = `${MESES[m]} ${y}`;
+    // Portada
+    let h = `<section class="pr-page pr-cover"><img src="icons/logo-color.png" alt="YUC'ATÅLOVE"><h1>Parrilla de contenido</h1><div class="sub">${titulo}</div>
+      <div class="pr-stats"><div class="pr-stat"><b>${delMes.length}</b>publicaciones</div>${Object.entries(porTipo).map(([k, n]) => `<div class="pr-stat"><b>${n}</b>${esc(k)}</div>`).join("")}</div>
+      <div class="pr-stats">${Object.entries(porStatus).map(([k, n]) => `<div class="pr-stat"><b>${n}</b>${esc(k)}</div>`).join("")}</div>
+      <div class="pr-foot">Generado el ${new Date().toLocaleDateString("es-MX", { day: "numeric", month: "long", year: "numeric" })}</div></section>`;
+    // Calendario
+    const byDay = {}; delMes.forEach(p => (byDay[p.fecha] = byDay[p.fecha] || []).push(p));
+    const first = new Date(y, m, 1), start = new Date(y, m, 1 - ((first.getDay() + 6) % 7));
+    let cal = DOW.map(d => `<div class="dow">${d}</div>`).join("");
+    for (let i = 0; i < 42; i++) {
+      const d = new Date(start.getFullYear(), start.getMonth(), start.getDate() + i), k = iso(d);
+      if (i >= 35 && d.getMonth() !== m) break;
+      cal += `<div class="${d.getMonth() !== m ? "out" : ""}"><span class="n">${d.getDate()}</span>${(byDay[k] || []).map(p => `<span class="it" style="border-left-color:${colorDe("tipo", p.tipo) || "#C3ACA9"}">${esc([p.tipo, p.copy].filter(Boolean).join(" · ") || "Sin copy")}</span>`).join("")}</div>`;
+    }
+    h += `<section class="pr-page"><h2 class="pr-h">Calendario <small>${titulo}</small></h2><div class="pr-cal">${cal}</div></section>`;
+    // Feed (como se verá en Instagram: lo más reciente arriba)
+    const feed = feedOrder(delMes);
+    h += `<section class="pr-page"><h2 class="pr-h">Vista del feed <small>${feed.length} publicaciones · sin historias</small></h2><div class="pr-feed">${feed.map(p => { const u = full(p); return `<div class="pr-tile">${u ? `<img src="${esc(u)}" alt="">` : `<em>${esc(p.copy || p.tipo || "Sin imagen")}</em>`}<span>${fmtCorto(p.fecha)}</span></div>`; }).join("") || '<p>Sin publicaciones en el feed este mes.</p>'}</div></section>`;
+    // Detalle de cada post
+    h += `<section class="pr-page"><h2 class="pr-h">Detalle de publicaciones <small>${titulo}</small></h2>${delMes.map(p => { const u = full(p); return `<article class="pr-post"><div class="img">${u ? `<img src="${esc(u)}" alt="">` : ""}</div><div>
+      <h3>${esc((p.dia ? p.dia + " " : "") + fmtCorto(p.fecha))}${p.semana ? " · " + esc(p.semana) : ""}</h3>
+      <div class="pr-tags">${tagHtml("tipo", p.tipo)}${tagHtml("pilar", p.pilar)}${tagHtml("status", p.status)}${p.cumplio ? tagHtml("cumplio", p.cumplio) : ""}</div>
+      ${p.copy ? `<div class="lbl">Copy</div><div class="txt">${esc(p.copy)}</div>` : ""}
+      ${p.caption ? `<div class="lbl">Caption</div><div class="txt">${esc(p.caption)}</div>` : ""}
+      ${p.comentarios ? `<div class="lbl">Comentarios</div><div class="txt">${esc(p.comentarios)}</div>` : ""}
+    </div></article>`; }).join("") || "<p>No hay publicaciones con fecha en este mes.</p>"}</section>`;
+    const area = $("print-area"); area.innerHTML = h;
+    await Promise.all([...area.querySelectorAll("img")].map(img => img.complete ? null : new Promise(r => { img.onload = img.onerror = r; setTimeout(r, 8000); })));
+    const prevTitle = document.title; document.title = `Parrilla YUC'ATÅLOVE - ${titulo}`;
+    window.print();
+    setTimeout(() => { document.title = prevTitle; }, 1000);
+  } catch (err) { banner("No se pudo preparar el PDF: " + errMsg(err)); }
+  finally { btn.disabled = false; btn.textContent = "⤓ Exportar mes a PDF"; }
+}
+$("cal-pdf").addEventListener("click", exportarPDF);
+
 /* ---------- Ajustes ---------- */
 function renderOpts(){
   const l = $("op-lista").value, items = opciones[l] || [];
