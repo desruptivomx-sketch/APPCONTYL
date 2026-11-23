@@ -21,7 +21,7 @@
 <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@400;600&family=Nunito+Sans:wght@400;600;700&display=swap" rel="stylesheet">
 <link rel="preload" href="fonts/the-seasons-regular.woff2" as="font" type="font/woff2" crossorigin>
 <link rel="preload" href="fonts/gotham-rounded-light.woff2" as="font" type="font/woff2" crossorigin>
-<link rel="stylesheet" href="styles.css?v=23">
+<link rel="stylesheet" href="styles.css?v=24">
 </head>
 <body>
 <!-- Pantalla de carga: se ve hasta que la app decide si mostrar la entrada o la parrilla -->
@@ -116,7 +116,7 @@
           <label class="label-sm" for="ff-mes">Mes</label><select id="ff-mes"></select>
           <label class="label-sm" for="ff-status">Status</label><select id="ff-status"></select>
         </div>
-        <div class="right"><button class="btn small" id="feed-add" type="button">+ Post</button><button class="btn ghost small" id="btn-sort" type="button">Ordenar por fecha</button></div>
+        <div class="right"><button class="btn ghost small" id="btn-sort" type="button">Ordenar por fecha</button></div>
       </div>
       <section id="stories-wrap" aria-label="Historias">
         <div class="label-sm">Historias (no aparecen en la cuadrícula)</div>
@@ -124,7 +124,7 @@
       </section>
       <section class="feed-grid" id="feed-grid" aria-label="Cuadrícula del feed"></section>
       <p class="note" id="st-otras"></p>
-      <p class="note"><span class="desk-only">Arrastra un cuadro sobre otro para cambiarlos de lugar. </span>Toca un cuadro para subir su imagen, editarlo o moverlo de lugar. Los datos son los mismos de la Parrilla.</p>
+      <p class="note">Toca un post para verlo como se publicará y copiar el caption o guardar sus imágenes. <span class="desk-only">Arrastra un cuadro sobre otro para cambiarlos de lugar. </span>Los posts se crean y editan en la Parrilla.</p>
     </div>
   </main>
 
@@ -273,6 +273,22 @@
   </div>
 </aside>
 
+<div id="pub" class="pub hidden" role="dialog" aria-modal="true" aria-label="Post listo para publicar">
+  <div class="pub-card">
+    <div class="pub-head"><span class="sv-av"><img src="icons/simbolo-arena.png" alt=""></span><div class="pub-who"><b>yucatalove</b><span id="pub-meta"></span></div><span class="chip" id="pub-status"></span><button type="button" class="pub-x" id="pub-close" aria-label="Cerrar">✕</button></div>
+    <div class="pub-body">
+      <div class="pub-media"><div class="pub-track" id="pub-track"></div><span class="pv-count hidden" id="pub-count"></span><div class="pub-dots" id="pub-dots"></div></div>
+      <div class="pub-side">
+        <div class="pub-actions"><button type="button" class="btn" id="pub-imgs">⤓ Guardar imágenes</button></div>
+        <div class="pub-block"><div class="pub-lbl"><span class="label-sm">Caption</span><button type="button" class="btn small" id="pub-copy-cap">Copiar caption</button></div><div class="pub-cap" id="pub-cap"></div></div>
+        <div class="pub-block hidden" id="pub-copy-wrap"><div class="pub-lbl"><span class="label-sm">Texto en el diseño</span><button type="button" class="btn ghost small" id="pub-copy-copy">Copiar</button></div><div class="pub-txt" id="pub-copy"></div></div>
+        <div class="pub-block hidden" id="pub-cont-wrap"><span class="label-sm">Material (video / archivos)</span><div class="lnks" id="pub-cont"></div></div>
+        <p class="note status-line" id="pub-msg" role="status"></p>
+        <div class="pub-foot"><button type="button" class="btn ghost small" id="pub-done">✔ Marcar como publicado</button><button type="button" class="btn ghost small" id="pub-edit">✎ Editar en Parrilla</button></div>
+      </div>
+    </div>
+  </div>
+</div>
 <div id="sv" class="sv hidden" role="dialog" aria-modal="true" aria-label="Historias">
   <div class="sv-frame">
     <div class="sv-bars" id="sv-bars"></div>
@@ -280,7 +296,7 @@
     <div class="sv-media" id="sv-media"></div>
     <button type="button" class="sv-nav prev" id="sv-prev" aria-label="Anterior"></button>
     <button type="button" class="sv-nav next" id="sv-next" aria-label="Siguiente"></button>
-    <div class="sv-foot"><p id="sv-copy"></p><button type="button" class="btn small" id="sv-edit">✎ Editar</button></div>
+    <div class="sv-foot"><p id="sv-copy"></p><button type="button" class="btn small" id="sv-save" aria-label="Guardar imagen">⤓</button><button type="button" class="btn small" id="sv-edit">✎ Editar</button></div>
   </div>
 </div>
 <dialog id="dlg" aria-labelledby="dlg-title">
@@ -301,7 +317,7 @@
 
 <div id="print-area" aria-hidden="true"></div>
 <script src="lib/supabase.js"></script>
-<script src="config.js?v=23"></script>
-<script src="app.js?v=23"></script>
+<script src="config.js?v=24"></script>
+<script src="app.js?v=24"></script>
 </body>
 </html>

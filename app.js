@@ -472,7 +472,7 @@ function renderFeed(){
     b.className = "tile" + (src ? "" : " empty") + (current && current.id === p.id ? " sel" : "");
     b.setAttribute("aria-label", `${p.tipo || "Post"} del ${fmtCorto(p.fecha)}: ${p.copy || "sin copy"}`);
     const st = p.status || "", sc = colorDe("status", st) || "#F6F6F4";
-    b.innerHTML = (src ? `<img src="${esc(src)}" alt="" loading="lazy" decoding="async">` : `<div class="ph"><div class="label-sm">${esc(p.pilar || "")}</div><div class="t">${esc(p.copy || p.tipo || "Post")}</div><div class="u">Subir imagen</div></div>`)
+    b.innerHTML = (src ? `<img src="${esc(src)}" alt="" loading="lazy" decoding="async">` : `<div class="ph"><div class="label-sm">${esc(p.pilar || "")}</div><div class="t">${esc(p.copy || p.tipo || "Post")}</div><div class="u">Sin imagen</div></div>`)
       + (ICON[p.tipo] ? ICON[p.tipo](src ? "#fff" : "#674E4A") : "")
       + (slidesOf(p).length > 1 ? `<span class="tile-n">${slidesOf(p).length}</span>` : "")
       + `<div class="meta"><span class="chip date">${fmtCorto(p.fecha)}</span>${st ? `<span class="chip" style="background:${sc};color:${textOn(sc)}">${esc(st)}</span>` : ""}</div>`;
@@ -482,7 +482,90 @@ function renderFeed(){
   const s = $("stories");
   s.innerHTML = `<button type="button" class="story story-add" id="story-add"><div class="ring"><span>＋</span></div>Nueva</button>` + st.map(p => { const src = thumbUrl(p.imagen_path); return `<button type="button" class="story" data-id="${p.id}"><div class="ring"><span style="${src ? `background-image:url('${esc(src)}')` : ""}"></span></div>${esc(fmtCorto(p.fecha))}</button>`; }).join("");
 }
-$("feed-grid").addEventListener("click", e => { const t = e.target.closest(".tile"); if (!t) return; const p = posts.find(x => x.id === t.dataset.id); if (p) openEditor(p); });
+$("feed-grid").addEventListener("click", e => { const t = e.target.closest(".tile"); if (!t) return; const p = posts.find(x => x.id === t.dataset.id); if (p) abrirPublicar(p); });
+
+/* ---------- Vista "listo para publicar": copiar caption y guardar imágenes ---------- */
+let pubPost = null;
+async function abrirPublicar(p){
+  pubPost = p;
+  const s = slidesOf(p); await signedUrls(s);
+  $("pub-meta").textContent = [p.tipo, p.fecha ? fmtCorto(p.fecha) : "sin fecha", p.pilar].filter(Boolean).join(" · ");
+  const st = p.status || "", sc = colorDe("status", st) || "#F6F6F4", chip = $("pub-status");
+  chip.textContent = st; chip.style.display = st ? "" : "none"; chip.style.background = sc; chip.style.color = textOn(sc);
+  $("pub-track").innerHTML = s.length ? s.map((x, i) => `<div class="pub-slide"><img src="${esc(urlOf(x) || thumbUrl(x))}" alt="Imagen ${i + 1}" ${i ? 'loading="lazy"' : ""}></div>`).join("")
+    : `<div class="pub-slide pub-empty"><div class="label-sm">${esc(p.pilar || "")}</div><p>${esc(p.copy || "Sin imagen")}</p><span>Aún no tiene imagen. Súbela desde la Parrilla.</span></div>`;
+  $("pub-track").scrollLeft = 0;
+  $("pub-dots").innerHTML = s.length > 1 ? s.map((_, i) => `<i class="${i ? "" : "on"}"></i>`).join("") : "";
+  $("pub-count").classList.toggle("hidden", s.length < 2); $("pub-count").textContent = `1 / ${s.length}`;
+  $("pub-imgs").textContent = s.length > 1 ? `⤓ Guardar ${s.length} imágenes` : "⤓ Guardar imagen";
+  $("pub-imgs").disabled = !s.length;
+  $("pub-cap").textContent = p.caption || "Este post todavía no tiene caption.";
+  $("pub-cap").classList.toggle("vacio", !p.caption); $("pub-copy-cap").disabled = !p.caption;
+  $("pub-copy-wrap").classList.toggle("hidden", !p.copy); $("pub-copy").textContent = p.copy || "";
+  $("pub-cont-wrap").classList.toggle("hidden", !linksDe(p.contenido).length); $("pub-cont").innerHTML = chipsLinks(p.contenido);
+  $("pub-done").classList.toggle("hidden", st === "Publicado" || !lista("status").some(o => o.valor === "Publicado"));
+  pmsg("");
+  $("pub").classList.remove("hidden"); document.body.classList.add("sv-open");
+  $("pub").querySelector(".pub-side").scrollTop = 0;
+  history.pushState({ pub: true }, "", location.hash);
+}
+function pmsg(t, warn){ const m = $("pub-msg"); m.textContent = t || ""; m.classList.toggle("warn", !!warn); }
+function cerrarPublicar(fromPop){
+  if ($("pub").classList.contains("hidden")) return;
+  $("pub").classList.add("hidden"); document.body.classList.remove("sv-open"); pubPost = null;
+  if (!fromPop && history.state && history.state.pub) history.back();
+}
+async function copiarTexto(t){
+  try { await navigator.clipboard.writeText(t); return true; }
+  catch (_) { const ta = document.createElement("textarea"); ta.value = t; ta.style.position = "fixed"; ta.style.opacity = "0"; document.body.appendChild(ta); ta.select(); let ok = false; try { ok = document.execCommand("copy"); } catch (_) {} ta.remove(); return ok; }
+}
+// Convierte a JPG para que Instagram, Meta y la galería del celular la acepten sin problema
+async function aJpg(path, nombre){
+  const r = await fetch(urlOf(path)); if (!r.ok) throw new Error("No se pudo descargar la imagen.");
+  const b = await r.blob();
+  try {
+    const bmp = await createImageBitmap(b); const cv = document.createElement("canvas"); cv.width = bmp.width; cv.height = bmp.height;
+    cv.getContext("2d").drawImage(bmp, 0, 0); bmp.close && bmp.close();
+    const j = await new Promise(res => cv.toBlob(res, "image/jpeg", 0.95));
+    if (j) return new File([j], nombre + ".jpg", { type: "image/jpeg" });
+  } catch (_) {}
+  return new File([b], nombre + "." + (b.type.split("/")[1] || "jpg"), { type: b.type });
+}
+async function guardarImagenes(p, msg){
+  const s = slidesOf(p); if (!s.length) return;
+  msg(s.length > 1 ? "Preparando imágenes…" : "Preparando imagen…");
+  try {
+    await signedUrls(s);
+    const base = `yucatalove-${p.fecha || "post"}`;
+    const files = await Promise.all(s.map((x, i) => aJpg(x, s.length > 1 ? `${base}-${i + 1}` : base)));
+    if (isMobile() && navigator.canShare && navigator.canShare({ files })) {
+      try { await navigator.share({ files }); msg("Listo. Elige “Guardar imagen” o compártela directo a Instagram."); return; }
+      catch (e) { if (e && e.name === "AbortError") { msg(""); return; } }
+    }
+    for (const f of files) { const u = URL.createObjectURL(f), a = document.createElement("a"); a.href = u; a.download = f.name; document.body.appendChild(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(u), 4000); await new Promise(r => setTimeout(r, 350)); }
+    msg(files.length > 1 ? `${files.length} imágenes descargadas en orden.` : "Imagen descargada.");
+  } catch (err) { msg(errMsg(err), true); }
+}
+$("pub-close").addEventListener("click", () => cerrarPublicar());
+$("pub").addEventListener("click", e => { if (e.target.id === "pub") cerrarPublicar(); });
+window.addEventListener("popstate", () => cerrarPublicar(true));
+document.addEventListener("keydown", e => { if (e.key === "Escape" && !$("pub").classList.contains("hidden")) cerrarPublicar(); });
+$("pub-track").addEventListener("scroll", () => {
+  const t = $("pub-track"), i = Math.round(t.scrollLeft / Math.max(1, t.clientWidth)), n = t.children.length;
+  [...$("pub-dots").children].forEach((d, k) => d.classList.toggle("on", k === i));
+  $("pub-count").textContent = `${i + 1} / ${n}`;
+}, { passive: true });
+$("pub-copy-cap").addEventListener("click", async () => { if (pubPost && pubPost.caption) pmsg(await copiarTexto(pubPost.caption) ? "Caption copiado. Pégalo en Instagram o Meta." : "No se pudo copiar; mantén presionado el texto para copiarlo.", false); });
+$("pub-copy-copy").addEventListener("click", async () => { if (pubPost && pubPost.copy) pmsg(await copiarTexto(pubPost.copy) ? "Texto copiado." : "No se pudo copiar.", false); });
+$("pub-imgs").addEventListener("click", () => pubPost && guardarImagenes(pubPost, pmsg));
+$("pub-edit").addEventListener("click", () => { const p = pubPost; cerrarPublicar(true); if (history.state && history.state.pub) history.replaceState(null, "", location.hash); if (p) openEditor(p); });
+$("pub-done").addEventListener("click", async () => {
+  if (!pubPost) return; const p = pubPost;
+  const { error } = await sb.from("posts").update({ status: "Publicado" }).eq("id", p.id);
+  if (error) { pmsg(errMsg(error), true); return; }
+  p.status = "Publicado"; renderAll(); abrirPublicarRefresh(p); pmsg("Marcado como publicado.");
+});
+function abrirPublicarRefresh(p){ const sc = colorDe("status", p.status) || "#F6F6F4", chip = $("pub-status"); chip.textContent = p.status; chip.style.display = ""; chip.style.background = sc; chip.style.color = textOn(sc); $("pub-done").classList.add("hidden"); }
 $("stories").addEventListener("click", async e => {
   if (e.target.closest("#story-add")) { await nuevoDesdeFeed("Historia"); return; }
   const t = e.target.closest(".story"); if (!t) return; abrirHistorias(t.dataset.id); });
@@ -521,6 +604,7 @@ function cerrarHistorias(fromPop){
 $("sv-prev").addEventListener("click", () => moverHistoria(-1));
 $("sv-next").addEventListener("click", () => moverHistoria(1));
 $("sv-close").addEventListener("click", () => cerrarHistorias());
+$("sv-save").addEventListener("click", () => { const p = svList[svIdx]; if (!p || !p.imagen_path) { $("sv-copy").textContent = "Esta historia aún no tiene imagen."; return; } clearTimeout(svTimer); guardarImagenes(p, t => { if (t) $("sv-copy").textContent = t; }); });
 $("sv-edit").addEventListener("click", () => { const p = svList[svIdx]; cerrarHistorias(true); if (history.state && history.state.sv) history.replaceState(null, "", location.hash); if (p) openEditor(p); });
 $("sv").addEventListener("click", e => { if (e.target.id === "sv") cerrarHistorias(); });
 window.addEventListener("popstate", () => cerrarHistorias(true));
@@ -564,7 +648,7 @@ async function nuevoDesdeFeed(tipo){
   renderFeed(); openEditor(p);
   emsg(tipo === "Historia" ? "Historia creada con fecha de hoy. Ajusta la fecha, sube la imagen y guarda." : "Post creado con fecha de hoy. Elige el tipo, sube la imagen y guarda.");
 }
-$("feed-add").addEventListener("click", () => nuevoDesdeFeed("Post estático"));
+
 
 /* ---------- Editor de post ---------- */
 const E_FIELDS = ["fecha","dia","semana","mes","tipo","pilar","status","cumplio","copy","caption","inspo","comentarios","contenido"];
