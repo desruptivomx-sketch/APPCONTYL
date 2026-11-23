@@ -477,11 +477,13 @@ function renderFeed(){
     frag.appendChild(b);
   });
   g.appendChild(frag);
-  const sw = $("stories-wrap"), s = $("stories"); sw.classList.toggle("hidden", !st.length);
-  s.innerHTML = st.map(p => { const src = thumbUrl(p.imagen_path); return `<button type="button" class="story" data-id="${p.id}"><div class="ring"><span style="${src ? `background-image:url('${esc(src)}')` : ""}"></span></div>${esc(fmtCorto(p.fecha))}</button>`; }).join("");
+  const s = $("stories");
+  s.innerHTML = `<button type="button" class="story story-add" id="story-add"><div class="ring"><span>＋</span></div>Nueva</button>` + st.map(p => { const src = thumbUrl(p.imagen_path); return `<button type="button" class="story" data-id="${p.id}"><div class="ring"><span style="${src ? `background-image:url('${esc(src)}')` : ""}"></span></div>${esc(fmtCorto(p.fecha))}</button>`; }).join("");
 }
 $("feed-grid").addEventListener("click", e => { const t = e.target.closest(".tile"); if (!t) return; const p = posts.find(x => x.id === t.dataset.id); if (p) openEditor(p); });
-$("stories").addEventListener("click", e => { const t = e.target.closest(".story"); if (!t) return; const p = posts.find(x => x.id === t.dataset.id); if (p) openEditor(p); });
+$("stories").addEventListener("click", async e => {
+  if (e.target.closest("#story-add")) { await nuevoDesdeFeed("Historia"); return; }
+  const t = e.target.closest(".story"); if (!t) return; const p = posts.find(x => x.id === t.dataset.id); if (p) openEditor(p); });
 $("feed-grid").addEventListener("dragstart", e => { const t = e.target.closest(".tile"); if (t) { e.dataTransfer.setData("text/plain", t.dataset.id); e.dataTransfer.effectAllowed = "move"; } });
 $("feed-grid").addEventListener("dragover", e => { const t = e.target.closest(".tile"); if (t) { e.preventDefault(); t.classList.add("drag-over"); } });
 $("feed-grid").addEventListener("dragleave", e => { const t = e.target.closest(".tile"); if (t) t.classList.remove("drag-over"); });
@@ -510,6 +512,17 @@ $("btn-sort").addEventListener("click", async () => {
   const changes = []; all.forEach((p, i) => { if (p.orden !== i) { p.orden = i; changes.push(p); } });
   renderFeed(); await persistOrder(changes);
 });
+
+
+async function nuevoDesdeFeed(tipo){
+  const p = await addPost(); if (!p) return;
+  const hoy = iso(new Date()), patch = { tipo, fecha: hoy, dia: diaDe(hoy), mes: mesDe(hoy) };
+  const { error } = await sb.from("posts").update(patch).eq("id", p.id);
+  if (!error) Object.assign(p, patch);
+  renderFeed(); openEditor(p);
+  emsg(tipo === "Historia" ? "Historia creada con fecha de hoy. Ajusta la fecha, sube la imagen y guarda." : "Post creado con fecha de hoy. Elige el tipo, sube la imagen y guarda.");
+}
+$("feed-add").addEventListener("click", () => nuevoDesdeFeed("Post estático"));
 
 /* ---------- Editor de post ---------- */
 const E_FIELDS = ["fecha","dia","semana","mes","tipo","pilar","status","cumplio","copy","caption","inspo","comentarios","contenido"];

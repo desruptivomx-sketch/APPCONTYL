@@ -354,3 +354,7 @@ body{font-weight:300}
 .ed-body .lnks{margin-top:-6px}
 .pr-post a{color:#AB391B}
 .pcard{cursor:pointer}
+
+.story-add .ring{background:var(--rosa)}
+.story-add .ring span{display:grid !important;place-items:center;font-size:26px;color:var(--terracota);background:var(--arena) !important}
+#view-feed .toolbar .right{gap:6px}
