@@ -85,7 +85,8 @@ async function signedUrls(paths){
 }
 const urlOf = p => (p && urlCache.get(p)) ? urlCache.get(p).url : "";
 const thumbUrl = p => urlOf(thumbOf(p)) || urlOf(p); // miniatura si existe; si no, la imagen completa
-const allImagePaths = list => list.flatMap(p => p.imagen_path ? [p.imagen_path, thumbOf(p.imagen_path)] : []);
+const slidesOf = p => [p.imagen_path, ...((p && p.imagenes) || [])].filter(Boolean); // portada + resto del carrusel
+const allImagePaths = list => list.flatMap(p => slidesOf(p).flatMap(x => [x, thumbOf(x)]));
 
 // Reduce la imagen antes de subirla: Instagram la muestra a 1080 px, así que 1440 px basta y pesa mucho menos.
 async function compress(file, maxSide, quality, onlyType){
@@ -235,7 +236,7 @@ function subscribe(){
   channel = sb.channel("parrilla")
     .on("postgres_changes", { event: "*", schema: "public", table: "posts" }, async payload => {
       if (payload.eventType === "DELETE") posts = posts.filter(p => p.id !== payload.old.id);
-      else { const n = payload.new; const i = posts.findIndex(p => p.id === n.id); if (i >= 0) posts[i] = n; else posts.push(n); if (n.imagen_path) await signedUrls(allImagePaths([n])); }
+      else { const n = payload.new; const i = posts.findIndex(p => p.id === n.id); if (i >= 0) posts[i] = n; else posts.push(n); if (slidesOf(n).length) await signedUrls(allImagePaths([n])); }
       if (current && !editorDirty) { const c = posts.find(p => p.id === current.id); if (c) current = c; }
       renderAll(true);
     })
@@ -409,7 +410,7 @@ function confirmDelete(p){
     if (d.returnValue !== "ok") return;
     const { error } = await sb.from("posts").delete().eq("id", p.id);
     if (error) { saved(errMsg(error), true); return; }
-    if (p.imagen_path) sb.storage.from(CFG.bucket).remove([p.imagen_path, thumbOf(p.imagen_path)]);
+    const imgs = slidesOf(p); if (imgs.length) sb.storage.from(CFG.bucket).remove(imgs.flatMap(x => [x, thumbOf(x)]));
     posts = posts.filter(x => x.id !== p.id); if (current && current.id === p.id) closeEditor(true); renderAll(); saved("Post eliminado");
   };
   d.returnValue = ""; d.showModal();
@@ -473,6 +474,7 @@ function renderFeed(){
     const st = p.status || "", sc = colorDe("status", st) || "#F6F6F4";
     b.innerHTML = (src ? `<img src="${esc(src)}" alt="" loading="lazy" decoding="async">` : `<div class="ph"><div class="label-sm">${esc(p.pilar || "")}</div><div class="t">${esc(p.copy || p.tipo || "Post")}</div><div class="u">Subir imagen</div></div>`)
       + (ICON[p.tipo] ? ICON[p.tipo](src ? "#fff" : "#674E4A") : "")
+      + (slidesOf(p).length > 1 ? `<span class="tile-n">${slidesOf(p).length}</span>` : "")
       + `<div class="meta"><span class="chip date">${fmtCorto(p.fecha)}</span>${st ? `<span class="chip" style="background:${sc};color:${textOn(sc)}">${esc(st)}</span>` : ""}</div>`;
     frag.appendChild(b);
   });
@@ -575,7 +577,8 @@ function openEditor(p){
   ["dia","semana","mes","tipo","pilar","status","cumplio"].forEach(k => { $("e-"+k).innerHTML = optionsHtml(k === "dia" ? "dia" : k === "mes" ? "mes" : k, p[k], true); $("e-"+k).value = p[k] || ""; });
   ["fecha","copy","caption","inspo","comentarios","contenido"].forEach(k => { $("e-"+k).value = p[k] || ""; });
   LINK_FIELDS.forEach(k => { $("e-"+k+"-links").innerHTML = chipsLinks(p[k]); });
-  setPreview(urlOf(p.imagen_path) || thumbUrl(p.imagen_path)); $("e-rmimg").classList.toggle("hidden", !p.imagen_path); emsg("");
+  pvIdx = 0; renderPreview(); renderSlides(); $("e-rmimg").classList.toggle("hidden", !p.imagen_path); emsg("");
+  cargarHistorial();
   renderUltimo(); renderComentarios(); $("c-text").value = "";
   $("editor").classList.remove("hidden"); $("scrim").classList.remove("hidden");
   if (isMobile()) document.body.style.overflow = "hidden";
@@ -600,12 +603,12 @@ $("editor").addEventListener("input", e => { if (!e.target.closest(".coments")) 
 $("editor").addEventListener("change", e => { if (e.target.closest(".coments")) return; editorDirty = true; if (e.target.id === "e-fecha" && e.target.value) { if (!$("e-dia").value) $("e-dia").value = diaDe(e.target.value); if (!$("e-mes").value) $("e-mes").value = mesDe(e.target.value); } });
 $("e-prev").addEventListener("click", () => moveBy(-1));
 $("e-next").addEventListener("click", () => moveBy(1));
-$("e-preview").addEventListener("click", () => $("e-file").click());
+$("e-preview").addEventListener("click", () => { if (pvIdx === 0) $("e-file").click(); });
 $("e-file").addEventListener("change", e => {
   const f = e.target.files[0]; e.target.value = ""; if (!f) return;
   if (!f.type.startsWith("image/") && !/\.(heic|heif)$/i.test(f.name)) { emsg("Ese archivo no es una imagen.", true); return; }
   if (f.size > 40 * 1024 * 1024) { emsg("La imagen pesa más de 40 MB. Usa una más ligera.", true); return; }
-  pendingFile = f; editorDirty = true; if (pendingUrl) URL.revokeObjectURL(pendingUrl); pendingUrl = URL.createObjectURL(f); setPreview(pendingUrl); emsg("Imagen lista. Toca Guardar.");
+  pendingFile = f; editorDirty = true; if (pendingUrl) URL.revokeObjectURL(pendingUrl); pendingUrl = URL.createObjectURL(f); pvIdx = 0; renderPreview(); emsg("Portada lista. Toca Guardar.");
 });
 async function uploadImage(file, postId){
   emsg("Optimizando imagen…");
@@ -639,19 +642,118 @@ $("e-save").addEventListener("click", async () => {
     Object.assign(current, patch); const i = posts.findIndex(p => p.id === current.id); if (i >= 0) posts[i] = current;
     pendingFile = null; editorDirty = false; emsg("Guardado."); current.updated_by = user.email; current.updated_at = new Date().toISOString(); renderUltimo();
     $("e-title").textContent = current.fecha ? `Post del ${fmtCorto(current.fecha)}` : "Post nuevo";
-    setPreview(urlOf(current.imagen_path) || thumbUrl(current.imagen_path)); $("e-rmimg").classList.toggle("hidden", !current.imagen_path);
-    renderAll();
+    pvIdx = 0; renderPreview(); renderSlides(); $("e-rmimg").classList.toggle("hidden", !current.imagen_path);
+    renderAll(); cargarHistorial();
   } catch (err) { emsg(errMsg(err), true); }
   finally { btn.disabled = false; }
 });
 $("e-rmimg").addEventListener("click", async () => {
   if (!current || !current.imagen_path) return;
-  const old = current.imagen_path;
-  const { error } = await sb.from("posts").update({ imagen_path: null }).eq("id", current.id);
-  if (error) { emsg(errMsg(error), true); return; }
-  sb.storage.from(CFG.bucket).remove([old, thumbOf(old)]); current.imagen_path = null; setPreview(""); $("e-rmimg").classList.add("hidden"); emsg("Imagen quitada."); renderAll();
+  await quitarSlide(0);
 });
 $("e-del").addEventListener("click", () => { if (current) { editorDirty = false; confirmDelete(current); } });
+
+/* ---------- Carrusel: varias imágenes por post ---------- */
+let pvIdx = 0;
+function renderPreview(){
+  if (!current) return;
+  const s = slidesOf(current), n = s.length;
+  if (pvIdx >= n) pvIdx = Math.max(0, n - 1);
+  if (pvIdx === 0 && pendingUrl) setPreview(pendingUrl);
+  else setPreview(s[pvIdx] ? (urlOf(s[pvIdx]) || thumbUrl(s[pvIdx])) : "");
+  const multi = n > 1;
+  $("pv-prev").classList.toggle("hidden", !multi || pvIdx === 0);
+  $("pv-next").classList.toggle("hidden", !multi || pvIdx >= n - 1);
+  $("pv-count").classList.toggle("hidden", !multi);
+  $("pv-count").textContent = `${pvIdx + 1} / ${n}`;
+  $("e-preview").title = pvIdx === 0 ? "Toca para cambiar la portada" : "";
+}
+function esCarrusel(){ return $("e-tipo").value === "Carrusel" || (current && slidesOf(current).length > 1); }
+function renderSlides(){
+  if (!current) return;
+  $("e-slides").classList.toggle("hidden", !esCarrusel());
+  const s = slidesOf(current);
+  $("slide-strip").innerHTML = s.map((x, i) => `<div class="slide${i === pvIdx ? " sel" : ""}" data-i="${i}">
+      <button type="button" class="sl-img" data-ver="${i}" aria-label="Ver imagen ${i + 1}" style="background-image:url('${esc(thumbUrl(x))}')"><span>${i + 1}</span></button>
+      <div class="sl-ctl"><button type="button" data-mv="-1" aria-label="Mover antes" ${i === 0 ? "disabled" : ""}>◀</button><button type="button" data-rm aria-label="Quitar imagen ${i + 1}">✕</button><button type="button" data-mv="1" aria-label="Mover después" ${i === s.length - 1 ? "disabled" : ""}>▶</button></div></div>`).join("")
+    + `<button type="button" class="slide add" id="sl-add"><span>＋</span>Agregar</button>`;
+}
+async function guardarSlides(list){
+  const patch = { imagen_path: list[0] || null, imagenes: list.slice(1) };
+  const { error } = await sb.from("posts").update(patch).eq("id", current.id);
+  if (error) { emsg(errMsg(error), true); return false; }
+  Object.assign(current, patch); const i = posts.findIndex(p => p.id === current.id); if (i >= 0) posts[i] = current;
+  renderPreview(); renderSlides(); $("e-rmimg").classList.toggle("hidden", !current.imagen_path); renderAll(); cargarHistorial();
+  return true;
+}
+async function quitarSlide(i){
+  if (pendingFile) { emsg("Primero guarda o descarta la nueva portada.", true); return; }
+  const s = slidesOf(current), x = s[i]; if (!x) return;
+  s.splice(i, 1);
+  if (await guardarSlides(s)) { sb.storage.from(CFG.bucket).remove([x, thumbOf(x)]); emsg(i === 0 && s.length ? "Portada quitada. La siguiente imagen ahora es la portada." : "Imagen quitada."); }
+}
+$("e-tipo").addEventListener("change", renderSlides);
+$("pv-prev").addEventListener("click", () => { pvIdx--; renderPreview(); renderSlides(); });
+$("pv-next").addEventListener("click", () => { pvIdx++; renderPreview(); renderSlides(); });
+$("slide-strip").addEventListener("click", async e => {
+  if (!current) return;
+  if (e.target.closest("#sl-add")) { if (pendingFile) { emsg("Primero guarda o descarta la nueva portada.", true); return; } $("e-files").click(); return; }
+  const sl = e.target.closest(".slide"); if (!sl) return; const i = +sl.dataset.i;
+  if (e.target.closest("[data-ver]")) { pvIdx = i; renderPreview(); renderSlides(); return; }
+  if (e.target.closest("[data-rm]")) { await quitarSlide(i); return; }
+  const mv = e.target.closest("[data-mv]");
+  if (mv) {
+    if (pendingFile) { emsg("Primero guarda o descarta la nueva portada.", true); return; }
+    const d = +mv.dataset.mv, s = slidesOf(current), j = i + d; if (j < 0 || j >= s.length) return;
+    [s[i], s[j]] = [s[j], s[i]]; pvIdx = j;
+    if (await guardarSlides(s)) emsg(j === 0 || i === 0 ? "Orden guardado. La imagen 1 es la portada." : "Orden guardado.");
+  }
+});
+$("e-files").addEventListener("change", async e => {
+  const files = [...e.target.files]; e.target.value = ""; if (!files.length || !current) return;
+  const s = slidesOf(current), nuevas = [];
+  try {
+    for (let k = 0; k < files.length; k++) {
+      const f = files[k];
+      if (!f.type.startsWith("image/") && !/\.(heic|heif)$/i.test(f.name)) continue;
+      if (f.size > 40 * 1024 * 1024) { emsg(`${f.name} pesa más de 40 MB; se omitió.`, true); continue; }
+      const path = await uploadImage(f, current.id); nuevas.push(path);
+      emsg(`Subidas ${k + 1} de ${files.length}…`);
+    }
+  } catch (err) { emsg(errMsg(err), true); }
+  if (!nuevas.length) return;
+  await signedUrls(allImagePaths([{ imagenes: nuevas }]));
+  if (await guardarSlides(s.concat(nuevas))) { pvIdx = s.length; renderPreview(); renderSlides(); emsg(`${nuevas.length === 1 ? "Imagen agregada" : nuevas.length + " imágenes agregadas"} al carrusel.`); }
+});
+
+/* ---------- Historial de cambios ---------- */
+const H_LABEL = { fecha:"Fecha", dia:"Día", semana:"Semana", mes:"Mes", tipo:"Tipo", pilar:"Pilar", status:"Status", cumplio:"¿Cumplió?", copy:"Copy", caption:"Caption", inspo:"Inspo", comentarios:"Comentarios", contenido:"Contenido" };
+const H_LARGOS = ["copy","caption","inspo","comentarios","contenido"];
+let histPost = null;
+async function cargarHistorial(){
+  if (!current) return; const id = current.id; histPost = id;
+  const { data, error } = await sb.from("historial").select("*").eq("post_id", id).order("created_at", { ascending: false }).limit(60);
+  if (histPost !== id || !current) return;
+  const list = error ? [] : (data || []).filter(h => h.post_id === id || !h.post_id);
+  $("h-n").textContent = list.length ? `(${list.length})` : "";
+  $("h-list").innerHTML = list.length ? list.map(h => `<li><div><b>${esc(nombreDe(h.autor))}</b> ${histTexto(h)}</div><span class="note">${esc(cuando(h.created_at))}</span></li>`).join("")
+    : '<li class="note">Aún no hay cambios registrados.</li>';
+}
+function histTexto(h){
+  const v = t => `<span class="h-v">${esc(t)}</span>`;
+  if (h.campo === "creado") return "creó el post";
+  if (h.campo === "imagen_path") return !h.antes ? "subió la portada" : !h.despues ? "quitó la portada" : "cambió la portada";
+  if (h.campo === "imagenes") { const a = +h.antes, d = +h.despues; return d > a ? `agregó ${d - a === 1 ? "una imagen" : (d - a) + " imágenes"} al carrusel` : d < a ? `quitó ${a - d === 1 ? "una imagen" : (a - d) + " imágenes"} del carrusel` : "reordenó el carrusel"; }
+  const L = H_LABEL[h.campo] || h.campo;
+  if (H_LARGOS.includes(h.campo)) {
+    if (!h.antes) return `agregó ${L}`;
+    if (!h.despues) return `borró ${L}`;
+    const ant = h.antes.length > 140 ? h.antes.slice(0, 140) + "…" : h.antes;
+    return `editó ${L}<div class="h-antes">Antes: ${esc(ant)}</div>`;
+  }
+  const fmt = x => h.campo === "fecha" && x ? fmtCorto(x) : x;
+  return `cambió ${L}: ${h.antes ? `<s>${esc(fmt(h.antes))}</s> → ` : ""}${h.despues ? v(fmt(h.despues)) : "<i>vacío</i>"}`;
+}
 
 
 /* ---------- Comentarios ---------- */

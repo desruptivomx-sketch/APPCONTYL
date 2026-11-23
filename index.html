@@ -21,7 +21,7 @@
 <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@400;600&family=Nunito+Sans:wght@400;600;700&display=swap" rel="stylesheet">
 <link rel="preload" href="fonts/the-seasons-regular.woff2" as="font" type="font/woff2" crossorigin>
 <link rel="preload" href="fonts/gotham-rounded-light.woff2" as="font" type="font/woff2" crossorigin>
-<link rel="stylesheet" href="styles.css?v=22">
+<link rel="stylesheet" href="styles.css?v=23">
 </head>
 <body>
 <!-- Pantalla de carga: se ve hasta que la app decide si mostrar la entrada o la parrilla -->
@@ -216,8 +216,18 @@
     <button class="btn small" id="e-save" type="button">Guardar</button>
   </div>
   <div class="ed-body">
-    <button type="button" class="preview" id="e-preview">Subir imagen o portada</button>
+    <div class="pv-wrap">
+      <button type="button" class="preview" id="e-preview">Subir imagen o portada</button>
+      <button type="button" class="pv-nav prev hidden" id="pv-prev" aria-label="Imagen anterior">‹</button>
+      <button type="button" class="pv-nav next hidden" id="pv-next" aria-label="Imagen siguiente">›</button>
+      <span class="pv-count hidden" id="pv-count"></span>
+    </div>
     <input type="file" id="e-file" accept="image/*" class="hidden">
+    <div class="slides hidden" id="e-slides">
+      <div class="slides-head"><span class="label-sm">Imágenes del carrusel</span><span class="note">La 1 es la portada · usa ◀ ▶ para ordenar</span></div>
+      <div class="slide-strip" id="slide-strip"></div>
+      <input type="file" id="e-files" accept="image/*" multiple class="hidden">
+    </div>
     <div class="actions">
       <button class="btn ghost small hidden" id="e-rmimg" type="button">Quitar imagen</button>
       <span class="move-ctl"><span class="label-sm">Lugar en el feed</span>
@@ -249,6 +259,7 @@
     <div class="lnks" id="e-contenido-links"></div>
     <p class="note status-line" id="e-msg" role="status"></p>
     <p class="note" id="e-last"></p>
+    <details class="hist" id="hist"><summary>Historial de cambios <span id="h-n"></span></summary><ol class="h-list" id="h-list"></ol></details>
     <section class="coments" aria-labelledby="c-title">
       <h4 id="c-title">Conversación del equipo</h4>
       <ol class="c-list" id="c-list"></ol>
@@ -290,7 +301,7 @@
 
 <div id="print-area" aria-hidden="true"></div>
 <script src="lib/supabase.js"></script>
-<script src="config.js?v=22"></script>
-<script src="app.js?v=22"></script>
+<script src="config.js?v=23"></script>
+<script src="app.js?v=23"></script>
 </body>
 </html>
