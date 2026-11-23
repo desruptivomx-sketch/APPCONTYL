@@ -551,6 +551,7 @@ function crossTable(el, rowsKey, rowVals, colKey, colVals, rowsFilter){
 }
 $("rs-mes").addEventListener("change", renderResumen);
 function renderResumen(){
+  renderCalendar();
   const m = $("rs-mes").value, byMes = p => !m || p.mes === m;
   crossTable($("sum-semana"), "semana", lista("semana").map(o => o.valor), "tipo", lista("tipo").map(o => o.valor), byMes);
   crossTable($("sum-pilar"), "pilar", lista("pilar").map(o => o.valor), "status", lista("status").map(o => o.valor), byMes);
@@ -558,6 +559,52 @@ function renderResumen(){
   const d = posts.filter(byMes), si = d.filter(p => p.cumplio === "✔").length, no = d.filter(p => p.cumplio === "✖").length;
   $("sum-cumplio").innerHTML = `<div class="kpi"><b>${si}</b>Cumplieron ✔</div><div class="kpi"><b>${no}</b>No cumplieron ✖</div><div class="kpi"><b>${d.length - si - no}</b>Sin evaluar</div>`;
 }
+
+
+/* ---------- Calendario ---------- */
+let calRef = (() => { const d = new Date(); return new Date(d.getFullYear(), d.getMonth(), 1); })();
+const DOW = ["Lun","Mar","Mié","Jue","Vie","Sáb","Dom"];
+const iso = d => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+function calPost(p){
+  const c = colorDe("tipo", p.tipo) || "#C3ACA9", u = thumbUrl(p.imagen_path);
+  const label = [p.tipo, p.copy].filter(Boolean).join(" · ") || "Sin copy";
+  return `<button type="button" class="cal-post${p.status === "Publicado" ? " pub" : ""}" data-open="${p.id}" style="border-left-color:${c}" title="${esc(label + (p.status ? " — " + p.status : ""))}">${u ? `<img src="${esc(u)}" alt="" loading="lazy">` : ""}<span class="t">${esc(label)}</span></button>`;
+}
+function renderCalendar(){
+  const y = calRef.getFullYear(), m = calRef.getMonth(), hoy = iso(new Date());
+  $("cal-month").textContent = `${MESES[m]} ${y}`;
+  $("cal-legend").innerHTML = lista("tipo").map(o => chip("tipo", o.valor)).join("") + '<span class="note">· Lo publicado se ve más tenue</span>';
+  const byDay = {};
+  posts.forEach(p => { if (p.fecha) (byDay[p.fecha] = byDay[p.fecha] || []).push(p); });
+  Object.values(byDay).forEach(l => l.sort((a, b) => String(a.tipo || "").localeCompare(String(b.tipo || ""))));
+  // cuadrícula de lunes a domingo
+  const first = new Date(y, m, 1), start = new Date(y, m, 1 - ((first.getDay() + 6) % 7));
+  let h = DOW.map(d => `<div class="cal-dow">${d}</div>`).join("");
+  for (let i = 0; i < 42; i++) {
+    const d = new Date(start.getFullYear(), start.getMonth(), start.getDate() + i), k = iso(d);
+    if (i >= 35 && d.getMonth() !== m) break;
+    h += `<div class="cal-day${d.getMonth() !== m ? " out" : ""}${k === hoy ? " today" : ""}"><span class="cal-num">${d.getDate()}</span>${(byDay[k] || []).map(calPost).join("")}<button type="button" class="cal-add" data-add="${k}" aria-label="Agregar post el ${d.getDate()} de ${MESES[d.getMonth()]}" title="Agregar post este día">＋</button></div>`;
+  }
+  $("cal-grid").innerHTML = h;
+  // agenda para celular: solo los días del mes con publicaciones
+  const dias = Object.keys(byDay).filter(k => k.startsWith(`${y}-${String(m + 1).padStart(2, "0")}-`)).sort();
+  $("cal-agenda").innerHTML = dias.length ? dias.map(k => { const d = new Date(k + "T12:00:00"); return `<li><div class="d${k === hoy ? " today" : ""}">${DOW[(d.getDay() + 6) % 7]}<b>${d.getDate()}</b></div><div class="items">${byDay[k].map(calPost).join("")}</div></li>`; }).join("")
+    : '<li class="empty-state">No hay publicaciones con fecha en este mes.</li>';
+  const sin = posts.filter(p => !p.fecha).length;
+  $("cal-sinfecha").textContent = sin ? `${sin} post${sin === 1 ? "" : "s"} sin fecha no aparece${sin === 1 ? "" : "n"} en el calendario. Asígnales fecha en la Parrilla.` : "";
+}
+$("cal-prev").addEventListener("click", () => { calRef = new Date(calRef.getFullYear(), calRef.getMonth() - 1, 1); renderCalendar(); });
+$("cal-next").addEventListener("click", () => { calRef = new Date(calRef.getFullYear(), calRef.getMonth() + 1, 1); renderCalendar(); });
+$("cal-today").addEventListener("click", () => { const d = new Date(); calRef = new Date(d.getFullYear(), d.getMonth(), 1); renderCalendar(); });
+$("view-resumen").addEventListener("click", async e => {
+  const o = e.target.closest("[data-open]"); if (o) { const p = posts.find(x => x.id === o.dataset.open); if (p) openEditor(p); return; }
+  const a = e.target.closest("[data-add]"); if (!a) return;
+  const f = a.dataset.add, p = await addPost(); if (!p) return;
+  const patch = { fecha: f, dia: diaDe(f), mes: mesDe(f) };
+  const { error } = await sb.from("posts").update(patch).eq("id", p.id);
+  if (!error) Object.assign(p, patch);
+  renderCalendar(); openEditor(p);
+});
 
 /* ---------- Ajustes ---------- */
 function renderOpts(){

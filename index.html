@@ -12,14 +12,14 @@
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-<meta name="apple-mobile-web-app-title" content="Parrilla YL">
+<meta name="apple-mobile-web-app-title" content="Parrilla">
 <link rel="preconnect" href="https://pgqwzusyrsjjdofucrkr.supabase.co" crossorigin>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@400;600&family=Nunito+Sans:wght@400;600;700&display=swap" rel="stylesheet">
 <link rel="preload" href="fonts/the-seasons-regular.woff2" as="font" type="font/woff2" crossorigin>
 <link rel="preload" href="fonts/gotham-rounded-light.woff2" as="font" type="font/woff2" crossorigin>
-<link rel="stylesheet" href="styles.css">
+<link rel="stylesheet" href="styles.css?v=8">
 </head>
 <body>
 <!-- Acceso -->
@@ -121,6 +121,21 @@
 
   <!-- RESUMEN -->
   <main id="view-resumen" class="view hidden">
+    <section class="card cal-card" aria-labelledby="cal-title">
+      <div class="cal-head">
+        <h3 id="cal-title">Calendario</h3>
+        <div class="cal-nav">
+          <button class="btn ghost small" id="cal-prev" type="button" aria-label="Mes anterior">◀</button>
+          <span class="cal-month" id="cal-month" aria-live="polite"></span>
+          <button class="btn ghost small" id="cal-next" type="button" aria-label="Mes siguiente">▶</button>
+          <button class="btn ghost small" id="cal-today" type="button">Hoy</button>
+        </div>
+      </div>
+      <div class="cal-legend" id="cal-legend"></div>
+      <div class="cal-grid desk-only" id="cal-grid"></div>
+      <ol class="cal-agenda mob-only" id="cal-agenda"></ol>
+      <p class="note" id="cal-sinfecha"></p>
+    </section>
     <div class="toolbar"><div class="left"><label class="label-sm" for="rs-mes">Mes</label><select id="rs-mes"></select></div></div>
     <div class="cards">
       <section class="card"><h3>Posts por semana y tipo</h3><div class="table-wrap"><table class="sum" id="sum-semana"></table></div></section>
@@ -241,7 +256,7 @@
 </dialog>
 
 <script src="lib/supabase.js"></script>
-<script src="config.js"></script>
-<script src="app.js"></script>
+<script src="config.js?v=8"></script>
+<script src="app.js?v=8"></script>
 </body>
 </html>
