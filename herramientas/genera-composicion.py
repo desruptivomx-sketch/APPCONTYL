@@ -339,5 +339,48 @@ motivos = {
 }
 for nom, ks in motivos.items(): tam[nom] = estatico(ks, nom)
 tam["composicion-motion"] = len(motion)
+
+# ---------- 4. Piezas sueltas para los laterales del Feed ----------
+# Una base fija y unas pocas piezas aparte. Cada pieza es su propio <svg>, así el navegador la mueve
+# como una capa ya pintada (no vuelve a dibujar nada) y el movimiento no le quita fluidez a la app.
+# El color lo pone la página (currentColor) y la posición va en porcentajes del cuadro completo.
+corte_cor = lambda X, Y: (X < 868) & (Y > 2110)           # mitad del corazón que viene unida a la mano
+corte_mano = lambda X, Y: ~((X < 850) & (Y > 2110))       # la mano conserva un tramo debajo del corazón (sin costura)
+PIEZAS = [    # nombre, piezas, (pieza, recorte) extra, punto de giro o de escala en unidades del viewBox (None = centro)
+    ("rosa",     nombres["rosa"], [], (179.3, 605)),
+    ("fuente",   nombres["fuente"] + nombres["gotas"], [], (179.3, 612)),
+    ("corazon",  nombres["corazon"], [(MANO, corte_cor)], (179.3, 795)),
+    ("pendulo",  nombres["pendulo"], [], (767.7, 490)),
+    ("destello", nombres["destello"], [], None),
+    ("rayos",    nombres["rayoA"] + nombres["rayoB"] + nombres["rayoC"] + nombres["rayoD"] + nombres["solcito"], [], (768.3, 478)),
+    ("nota",     nombres["nota"], [], None),
+    ("greca",    nombres["greca"], [], None),
+]
+def caja_px(ks, cortes):
+    cs = [(comps[k][1], comps[k][2], comps[k][1] + comps[k][3], comps[k][2] + comps[k][4]) for k in ks]
+    for k, rec in cortes:
+        Y, X = np.nonzero(lab == comps[k][0]); m = rec(X, Y)
+        cs.append((int(X[m].min()), int(Y[m].min()), int(X[m].max()) + 1, int(Y[m].max()) + 1))
+    return min(c[0] for c in cs), min(c[1] for c in cs), max(c[2] for c in cs), max(c[3] for c in cs)
+def n3(v):
+    s = "%.3f" % v
+    return s.rstrip("0").rstrip(".") if "." in s else s
+sueltas = [k for _, ks, _, _ in PIEZAS for k in ks]
+assert len(sueltas) == len(set(sueltas)) and MANO not in sueltas
+base_d = "".join(shapes[k] for k in range(NC) if k not in sueltas and k != MANO) + traza(MANO, corte_mano)
+lado = ['<div class="arte"><svg class="pz pz-base" viewBox="0 0 %d %d"><path fill-rule="evenodd" d="%s"/></svg>' % (U, U, base_d)]
+PAD = 18                                                  # margen de la caja (px del original) para no recortar bordes
+for nom, ks, cortes, org in PIEZAS:
+    x0, y0, x1, y1 = caja_px(ks, cortes)
+    bx, by, bw, bh = (x0 - PAD) * K, (y0 - PAD) * K, (x1 - x0 + 2 * PAD) * K, (y1 - y0 + 2 * PAD) * K
+    ox, oy = org if org else (bx + bw / 2, by + bh / 2)
+    d = "".join(shapes[k] for k in ks) + "".join(traza(k, rec) for k, rec in cortes)
+    lado.append('<svg class="pz pz-mov pz-%s" viewBox="%s %s %s %s" style="left:%s%%;top:%s%%;width:%s%%;height:%s%%;transform-origin:%s%% %s%%"><path fill-rule="evenodd" d="%s"/></svg>'
+                % (nom, n3(bx), n3(by), n3(bw), n3(bh), n3(bx / U * 100), n3(by / U * 100), n3(bw / U * 100), n3(bh / U * 100), n3((ox - bx) / bw * 100), n3((oy - by) / bh * 100), d))
+    print("  pieza suelta %-9s caja %6.1f %6.1f %6.1f x %5.1f  giro %5.1f%% %5.1f%%" % (nom, bx, by, bw, bh, (ox - bx) / bw * 100, (oy - by) / bh * 100))
+lado.append('</div>')
+lado = "".join(lado)
+open(OUT + "/composicion-lados.html", "w").write(lado)
+tam["composicion-lados"] = len(lado)
 print({k: "%d KB" % (v // 1024) for k, v in tam.items()})
 json.dump({"T": T, "nombres": nombres, "ini": ini, "fin": fin}, open(OUT + "/info.json", "w"))

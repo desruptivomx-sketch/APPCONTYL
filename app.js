@@ -309,7 +309,51 @@ function setView(v){
   VIEWS.forEach(x => { $("view-"+x).classList.toggle("hidden", x !== v); $("tab-"+x).setAttribute("aria-selected", String(x === v)); });
   if (location.hash !== "#"+v) history.replaceState(null, "", "#"+v);
   renderAll(); window.scrollTo(0, 0);
+  montarLados();
 }
+
+/* ---------- Laterales del Feed: la composición de marca a cada lado (la derecha, en espejo) ----------
+   Solo en pantallas anchas, donde la columna del Feed deja hueco. El archivo trae una base fija y unas
+   pocas piezas sueltas ya colocadas. El movimiento es por "actos": cada tanto una sola pieza hace algo
+   breve (late el corazón, se mece el péndulo…) en ambos lados a la vez; entre un acto y otro no queda
+   nada animándose. Los actos son de CSS (styles.css, clase .act) y mueven capas, no redibujan. */
+const LADOS_MQ = window.matchMedia("(min-width:1252px)");
+const QUIETO_MQ = window.matchMedia("(prefers-reduced-motion: reduce)");
+const LADOS_ACTOS = ["corazon","pendulo","destello","rayos","corazon","nota","greca","fuente","rosa"];
+let ladosEstado = 0;   // 0 sin montar · 1 cargando · 2 listo
+let ladosT = 0, ladosI = 0;
+const ladosActivo = () => ladosEstado === 2 && view === "feed" && LADOS_MQ.matches && !QUIETO_MQ.matches && !document.hidden && document.hasFocus();
+async function montarLados(){
+  const box = $("lados");
+  if (!box || view !== "feed" || !LADOS_MQ.matches) return;
+  if (ladosEstado === 2) { box.querySelectorAll(".act").forEach(el => el.classList.remove("act")); ladosRitmo(1600); return; }   // al volver al Feed, empieza limpio
+  if (ladosEstado) return;
+  ladosEstado = 1;
+  try {
+    const r = await fetch("icons/composicion-lados.html"); if (!r.ok) throw new Error("sin laterales");
+    const t = await r.text(); if (!t.startsWith('<div class="arte">')) throw new Error("laterales inválidos");
+    box.innerHTML = '<div class="lado lado-izq">' + t + '</div><div class="lado lado-der">' + t + '</div>';
+    box.querySelectorAll(".arte").forEach(a => a.classList.add("entra"));
+    box.addEventListener("animationend", e => {
+      const el = e.target;
+      if (el.classList.contains("arte")) el.classList.remove("entra");
+      else if (el.classList.contains("act")) { el.classList.remove("act"); ladosRitmo(6000 + (ladosI % 3) * 1500); }   // descanso de 6 a 9 s antes del siguiente
+    });
+    ladosEstado = 2; ladosRitmo(1600);
+  } catch (_) { ladosEstado = 0; }   // sin conexión: se intenta de nuevo al volver al Feed
+}
+function ladosRitmo(espera){ clearTimeout(ladosT); ladosT = setTimeout(ladosActo, espera); }
+function ladosActo(){
+  ladosT = 0;
+  if (!ladosActivo()) return;   // se reanuda al volver al Feed o a la ventana
+  const piezas = $("lados").querySelectorAll(".pz-" + LADOS_ACTOS[ladosI++ % LADOS_ACTOS.length]);
+  piezas.forEach(el => el.classList.add("act"));
+  ladosRitmo(16000);            // por si el aviso de "terminó" no llega, el ritmo no se queda detenido
+}
+const ladosVuelve = () => { if (!ladosT && ladosActivo()) ladosRitmo(1200); };   // solo si el ritmo estaba detenido
+if (LADOS_MQ.addEventListener) LADOS_MQ.addEventListener("change", montarLados); else if (LADOS_MQ.addListener) LADOS_MQ.addListener(montarLados);
+window.addEventListener("focus", ladosVuelve);
+document.addEventListener("visibilitychange", ladosVuelve);
 document.querySelectorAll(".tabs button").forEach(b => b.addEventListener("click", () => {
   // Estando en Feed, tocar Feed otra vez abre el menú de plataformas
   if (b.dataset.view === "feed" && view === "feed") { abrirMenuPlat(b); return; }
