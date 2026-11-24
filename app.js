@@ -232,7 +232,7 @@ async function start(){
   setView(location.hash.replace("#","") || "parrilla");
   const { data: yo, error: e1 } = await sb.from("miembros").select("email").limit(1);
   if (e1 || !yo || !yo.length) banner("Tu correo (" + user.email + ") todavía no está en el equipo. Pide a alguien del equipo que lo agregue en Ajustes → Equipo y vuelve a abrir la app.");
-  await Promise.all([loadOpciones(), loadPosts(), loadTeam(), loadComentarios()]);
+  await Promise.all([loadOpciones(), loadPosts(), loadTeam(), loadComentarios(), loadPerfiles()]);
   subscribe();
 }
 async function loadOpciones(){
@@ -242,6 +242,18 @@ async function loadOpciones(){
   (data||[]).forEach(o => { (opciones[o.lista] = opciones[o.lista] || []).push(o); });
   fillSelects(); renderAll();
 }
+/* ---------- Perfiles de cada red (foto, nombre, bio, link, seguidores…) ---------- */
+let perfiles = {};
+async function loadPerfiles(){
+  const { data, error } = await sb.from("perfiles").select("*");
+  if (error) return;
+  perfiles = {}; (data || []).forEach(r => perfiles[r.plataforma] = r);
+  await signedUrls((data || []).flatMap(r => [r.foto_path, r.portada_path]).filter(Boolean));
+  if (view === "feed") renderFeed();
+}
+const pf = k => perfiles[k] || {};
+const pfFoto = k => urlOf(pf(k).foto_path) || "";
+const pfDato = (k, campo, def = "—") => (pf(k)[campo] || "").toString().trim() || def;
 async function loadPosts(){
   const { data, error } = await sb.from("posts").select("*").order("fecha", { ascending: true, nullsFirst: false });
   if (error) { saved(errMsg(error), true); return; }
@@ -260,6 +272,7 @@ function subscribe(){
       renderAll(true);
     })
     .on("postgres_changes", { event: "*", schema: "public", table: "opciones" }, () => loadOpciones())
+    .on("postgres_changes", { event: "*", schema: "public", table: "perfiles" }, () => loadPerfiles())
     .on("postgres_changes", { event: "*", schema: "public", table: "comentarios" }, payload => {
       if (payload.eventType === "DELETE") comentarios = comentarios.filter(c => c.id !== payload.old.id);
       else if (!comentarios.find(c => c.id === payload.new.id)) comentarios.push(payload.new);
@@ -482,6 +495,33 @@ const FUERA_DEL_FEED = ["Historia", "Pin", "TikTok", "Video YT", "Blog"];
 // La pauta (categoría "Pauta") es publicidad: no aparece en el feed orgánico (cuadrícula, historias ni Facebook)
 const enFeed = p => !FUERA_DEL_FEED.includes(p.tipo) && !esPauta(p);
 const feedOrder = list => list.filter(enFeed).sort((a, b) => (a.orden ?? 0) - (b.orden ?? 0) || String(b.fecha || "").localeCompare(String(a.fecha || "")));
+const IG_I = {
+  dots: '<svg viewBox="0 0 24 24"><circle cx="5" cy="12" r="1.4" fill="currentColor"/><circle cx="12" cy="12" r="1.4" fill="currentColor"/><circle cx="19" cy="12" r="1.4" fill="currentColor"/></svg>',
+  link: '<svg viewBox="0 0 24 24"><path d="M10 14a4 4 0 0 0 5.7 0l3-3a4 4 0 0 0-5.7-5.7l-1 1M14 10a4 4 0 0 0-5.7 0l-3 3a4 4 0 0 0 5.7 5.7l1-1"/></svg>',
+};
+function avatarHtml(k, cls){ const f = pfFoto(k); return `<span class="pf-av ${cls}${f ? " foto" : ""}"><img src="${esc(f || "icons/simbolo-arena.png")}" alt=""></span>`; }
+function linkTxt(l){ return String(l || "").replace(/^https?:\/\//, "").replace(/\/$/, ""); }
+function renderIgHeader(nPosts, historias){
+  const k = "instagram", P = pf(k), hay = historias.length > 0;
+  $("ig-profile").innerHTML = `
+    <div class="igp-top"><b>${esc(pfDato(k, "usuario", "yucatalove"))}</b><span>${IG_I.dots}</span></div>
+    <div class="igp-main">
+      <button type="button" class="igp-av${hay ? " ring" : ""}" id="igp-av" aria-label="${hay ? "Ver historias" : "Foto de perfil"}">${avatarHtml(k, "igp-foto")}</button>
+      <div class="igp-info">
+        <div class="igp-row1"><h2>${esc(pfDato(k, "usuario", "yucatalove"))}</h2><span class="igp-btn" data-editar-perfil>Editar perfil</span><span class="igp-btn" data-compartir-perfil>Compartir perfil</span></div>
+        <div class="igp-name">${esc(pfDato(k, "nombre", "YUC'ATÅLOVE"))}</div>
+        <div class="igp-stats"><span><b>${nPosts}</b> publicaciones</span><span><b>${esc(pfDato(k, "seguidores"))}</b> seguidores</span><span><b>${esc(pfDato(k, "seguidos"))}</b> seguidos</span></div>
+        <div class="igp-bio">${P.categoria ? `<span class="igp-cat">${esc(P.categoria)}</span>` : ""}${esc(P.bio || "")}${P.link ? `<a class="igp-link" href="${esc(/^https?:/.test(P.link) ? P.link : "https://" + P.link)}" target="_blank" rel="noopener">${IG_I.link}${esc(linkTxt(P.link))}</a>` : ""}</div>
+      </div>
+    </div>
+    <div class="igp-btns-m"><span class="igp-btn" data-editar-perfil>Editar perfil</span><span class="igp-btn" data-compartir-perfil>Compartir perfil</span></div>`;
+}
+$("ig-profile").addEventListener("click", async e => {
+  if (e.target.closest("[data-editar-perfil]")) { abrirEditorPerfil("instagram"); return; }
+  if (e.target.closest("[data-compartir-perfil]")) { const u = "https://instagram.com/" + pfDato("instagram", "usuario", "yucatalove"); const ok = await copiarTexto(u); const b = e.target.closest("[data-compartir-perfil]"); b.textContent = ok ? "Link copiado ✓" : u; setTimeout(() => renderFeed(), 1500); return; }
+  if (e.target.closest("#igp-av")) { const h = historiasVisibles(); if (h.length) abrirHistorias(h[0].id); else abrirEditorPerfil("instagram"); }
+});
+
 /* ---------- Plataformas del Feed (Instagram, TikTok, Pinterest, Facebook, Pauta, Blog) ---------- */
 const PLATS = {
   instagram: { n: "Instagram", bio: "Destination weddings in Yucatán · Together as one", filtro: null },
@@ -538,7 +578,10 @@ function renderPlataforma(){
   const ph = p => `<div class="ph"><div class="label-sm">${esc(p.pilar || "")}</div><div class="t">${esc(p.copy || p.tipo || "Post")}</div><div class="u">Sin imagen</div></div>`;
   const media = (p, cls = "") => img(p) ? `<img class="${cls}" src="${esc(img(p))}" alt="" loading="lazy">` : ph(p);
   const titulo = p => p.copy || String(p.caption || "").split("\n")[0] || "Sin título";
-  const av = (cls = "") => `<span class="pf-av ${cls}"><img src="icons/simbolo-arena.png" alt=""></span>`;
+  const av = (cls = "") => avatarHtml(plat === "pauta" ? "instagram" : plat, cls);
+  const D = (campo, def) => esc(pfDato(plat, campo, def));
+  const Pp = pf(plat);
+  const editar = `<button type="button" class="pf-edit" data-editar-perfil>✎ Editar perfil de ${esc(P.n)}</button>`;
   const vacio = `<div class="empty-state">${esc(P.vacio)}</div>`;
   const I = {
     grid: '<svg viewBox="0 0 24 24"><path d="M4 4h16v16H4zM4 9.3h16M4 14.6h16M9.3 4v16M14.6 4v16"/></svg>',
@@ -555,18 +598,18 @@ function renderPlataforma(){
   let html = "";
 
   if (plat === "tiktok") html = `<div class="tt">
-      <div class="tt-prof">${av("tt-av")}<h3>yucatalove</h3><div class="tt-user">YUC'ATÅLOVE</div>
-        <div class="tt-stats"><span><b>—</b> Siguiendo</span><span><b>—</b> Seguidores</span><span><b>—</b> Me gusta</span></div>
+      ${editar}<div class="tt-prof">${av("tt-av")}<h3>${D("usuario", "yucatalove")}</h3><div class="tt-user">${D("nombre", "YUC'ATÅLOVE")}</div>
+        <div class="tt-stats"><span><b>${D("seguidos")}</b> Siguiendo</span><span><b>${D("seguidores")}</b> Seguidores</span><span><b>${D("extra")}</b> Me gusta</span></div>
         <div class="tt-btns"><span class="tt-follow">Seguir</span><span class="tt-msg">Mensaje</span></div>
-        <p class="tt-bio">Destination weddings in Yucatán 🤍 Together as one</p><span class="tt-link">🔗 yucatalove.com</span></div>
+        ${Pp.bio ? `<p class="tt-bio">${esc(Pp.bio)}</p>` : ""}${Pp.link ? `<span class="tt-link">🔗 ${esc(linkTxt(Pp.link))}</span>` : ""}</div>
       <div class="tt-tabs"><span class="on">${I.grid}</span><span>${I.lock}</span><span>${I.heart}</span></div>
       ${list.length ? `<div class="tt-grid">${list.map(p => `<button type="button" class="tt-tile" data-id="${p.id}">${media(p)}${chipSt(p)}<span class="tt-views">${I.play}${esc(fmtCorto(p.fecha) || "sin fecha")}</span></button>`).join("")}</div>` : vacio}</div>`;
 
   if (plat === "pinterest") html = `<div class="pn">
-      <div class="pn-prof">${av("pn-av")}<h3>YUC'ATÅLOVE</h3>
-        <div class="pn-user"><span class="pn-p">P</span> yucatalove · <u>yucatalove.com</u></div>
-        <p class="pn-bio">Destination weddings in Yucatán · Together as one</p>
-        <div class="pn-stats"><b>—</b> seguidores · <b>—</b> seguidos</div>
+      ${editar}<div class="pn-prof">${av("pn-av")}<h3>${D("nombre", "YUC'ATÅLOVE")}</h3>
+        <div class="pn-user"><span class="pn-p">P</span> ${D("usuario", "yucatalove")}${Pp.link ? ` · <u>${esc(linkTxt(Pp.link))}</u>` : ""}</div>
+        ${Pp.bio ? `<p class="pn-bio">${esc(Pp.bio)}</p>` : ""}
+        <div class="pn-stats">${Pp.extra ? `<b>${esc(Pp.extra)}</b> visualizaciones mensuales · ` : ""}<b>${D("seguidores")}</b> seguidores · <b>${D("seguidos")}</b> seguidos</div>
         <div class="pn-btns"><span class="pn-share">Compartir</span><span class="pn-follow">Seguir</span></div></div>
       <div class="pn-tabs"><span class="on">Creados</span><span>Guardados</span></div>
       ${list.length ? (() => { const cols = innerWidth >= 1000 ? 5 : innerWidth >= 700 ? 4 : 2, C = Array.from({ length: cols }, () => []);
@@ -574,54 +617,55 @@ function renderPlataforma(){
         return `<div class="pn-grid">${C.map(c => `<div class="pn-col">${c.join("")}</div>`).join("")}</div>`; })() : vacio}</div>`;
 
   if (plat === "facebook") {
-    const portada = list.find(p => p.imagen_path);
+    const portada = list.find(p => p.imagen_path), cover = urlOf(Pp.portada_path);
     const fotos = (p) => { const s = slidesOf(p); if (s.length < 2) return `<div class="fb-media">${img(p) ? `<img src="${esc(full(p))}" alt="" loading="lazy">` : ph(p)}</div>`;
       const vis = s.slice(0, 4); return `<div class="fb-media fb-m${Math.min(s.length, 4)}">${vis.map((x, i) => `<div><img src="${esc(thumbUrl(x))}" alt="" loading="lazy">${i === 3 && s.length > 4 ? `<span class="fb-more">+${s.length - 4}</span>` : ""}</div>`).join("")}</div>`; };
     html = `<div class="fb">
-      <div class="fb-top"><div class="fb-cover">${portada ? `<img src="${esc(full(portada))}" alt="">` : `<div class="fb-cover-ph"><img src="icons/logo-arena-texto.png" alt=""></div>`}</div>
-        <div class="fb-id">${av("fb-av")}<div class="fb-name"><h3>YUC'ATÅLOVE</h3><span><b>—</b> Me gusta · <b>—</b> seguidores</span></div>
+      ${editar}<div class="fb-top"><div class="fb-cover">${cover ? `<img src="${esc(cover)}" alt="">` : portada ? `<img src="${esc(full(portada))}" alt="">` : `<div class="fb-cover-ph"><img src="icons/logo-arena-texto.png" alt=""></div>`}</div>
+        <div class="fb-id">${av("fb-av")}<div class="fb-name"><h3>${D("nombre", "YUC'ATÅLOVE")}</h3><span><b>${D("extra")}</b> Me gusta · <b>${D("seguidores")}</b> seguidores</span></div>
           <div class="fb-btns"><span class="fb-like">${I.like} Me gusta</span><span class="fb-msg">${I.com} Mensaje</span></div></div>
         <div class="fb-tabs"><span class="on">Publicaciones</span><span>Información</span><span>Menciones</span><span>Opiniones</span><span>Seguidores</span><span>Fotos</span><span>Más ▾</span></div></div>
-      <div class="fb-body"><aside class="fb-intro"><h4>Detalles</h4><p>Destination weddings in Yucatán · Together as one</p><ul><li>ℹ️ Página · Organizador de bodas</li><li>📍 Mérida, Yucatán, México</li><li>🔗 yucatalove.com</li></ul></aside>
+      <div class="fb-body"><aside class="fb-intro"><h4>Detalles</h4>${Pp.bio ? `<p>${esc(Pp.bio)}</p>` : ""}<ul>${Pp.categoria ? `<li>ℹ️ Página · ${esc(Pp.categoria)}</li>` : ""}${Pp.ubicacion ? `<li>📍 ${esc(Pp.ubicacion)}</li>` : ""}${Pp.link ? `<li>🔗 ${esc(linkTxt(Pp.link))}</li>` : ""}</ul></aside>
         <div class="fb-feed">${list.length ? list.map(p => `<button type="button" class="fb-post" data-id="${p.id}">
-          <div class="fb-ph">${av("fb-av-s")}<div><b>YUC'ATÅLOVE</b><span>${esc(fmtCorto(p.fecha) || "sin fecha")} · 🌐</span></div>${chipSt(p)}<i>${I.dots}</i></div>
+          <div class="fb-ph">${av("fb-av-s")}<div><b>${D("nombre", "YUC'ATÅLOVE")}</b><span>${esc(fmtCorto(p.fecha) || "sin fecha")} · 🌐</span></div>${chipSt(p)}<i>${I.dots}</i></div>
           ${(p.caption || p.copy) ? `<div class="fb-text"><p>${esc(p.caption || p.copy)}</p></div>` : ""}${fotos(p)}
           <div class="fb-reac"><span>👍❤️ —</span><span>— comentarios · — veces compartido</span></div>
           <div class="fb-acts"><span>${I.like} Me gusta</span><span>${I.com} Comentar</span><span>${I.share} Compartir</span></div></button>`).join("") : vacio}</div></div></div>`;
   }
 
-  if (plat === "pauta") html = `<div class="ad-feed">${list.length ? list.map(p => { const n = slidesOf(p).length; return `<button type="button" class="ig-ad" data-id="${p.id}">
-      <div class="ig-h">${av("ig-av")}<div><b>yucatalove</b><span>Publicidad${p.tipo ? " · " + esc(p.tipo) : ""}</span></div>${chipSt(p)}<i>${I.dots}</i></div>
+  if (plat === "pauta") html = `${editar}<div class="ad-feed">${list.length ? list.map(p => { const n = slidesOf(p).length; return `<button type="button" class="ig-ad" data-id="${p.id}">
+      <div class="ig-h">${av("ig-av")}<div><b>${esc(pfDato("instagram", "usuario", "yucatalove"))}</b><span>Publicidad${p.tipo ? " · " + esc(p.tipo) : ""}</span></div>${chipSt(p)}<i>${I.dots}</i></div>
       <div class="ig-media">${img(p) ? `<img src="${esc(full(p))}" alt="" loading="lazy">` : ph(p)}${n > 1 ? `<span class="tile-n">1/${n}</span>` : ""}</div>
-      <div class="ig-cta"><span>Más información</span><span>›</span></div>
+      <div class="ig-cta"><span>${D("extra", "Más información")}</span><span>›</span></div>
       <div class="ig-icons"><span>${I.heart}${I.com}${I.send}</span><span>${I.save}</span></div>
-      <p class="ig-cap"><b>yucatalove</b> ${esc(p.caption || p.copy || "")}</p>
+      <p class="ig-cap"><b>${esc(pfDato("instagram", "usuario", "yucatalove"))}</b> ${esc(p.caption || p.copy || "")}</p>
       <span class="ig-date">${esc(fmtCorto(p.fecha) || "sin fecha")}</span></button>`; }).join("") : vacio}</div>`;
 
   if (plat === "blog") {
     const [dest, ...resto] = list;
     const meta = p => `<span class="bl-cat">${esc(p.pilar || "Blog")}</span>`;
     const ext = p => { const c = String(p.caption || ""); return esc(c.slice(0, 170)) + (c.length > 170 ? "…" : ""); };
-    html = `<div class="bl">
-      <header class="bl-head"><img src="icons/logo-color-texto.png" alt="YUC'ATÅLOVE"><nav><span>Weddings</span><span>Haciendas</span><span>Wedding weekend</span><span class="on">Journal</span><span>Contact</span></nav></header>
-      <div class="bl-hero"><span class="label-sm">Journal</span><h2>Stories from Yucatán</h2></div>
+    html = `${editar}<div class="bl">
+      <header class="bl-head">${Pp.foto_path ? `<img src="${esc(pfFoto("blog"))}" alt="${D("nombre", "")}">` : `<img src="icons/logo-color-texto.png" alt="YUC'ATÅLOVE">`}<nav><span>Weddings</span><span>Haciendas</span><span>Wedding weekend</span><span class="on">Journal</span><span>Contact</span></nav></header>
+      <div class="bl-hero"><span class="label-sm">Journal</span><h2>${D("bio", "Stories from Yucatán")}</h2></div>
       ${dest ? `<button type="button" class="bl-dest" data-id="${dest.id}"><div class="bl-img">${img(dest) ? `<img src="${esc(full(dest))}" alt="">` : ph(dest)}</div><div class="bl-txt">${meta(dest)}<h3>${esc(titulo(dest))}</h3><p>${ext(dest)}</p><span class="bl-more">Leer artículo →</span><span class="bl-date">${esc(fmtCorto(dest.fecha) || "sin fecha")} ${chipSt(dest)}</span></div></button>` : vacio}
       ${resto.length ? `<div class="bl-grid">${resto.map(p => `<button type="button" class="bl-card" data-id="${p.id}"><div class="bl-img">${media(p)}</div>${meta(p)}<h3>${esc(titulo(p))}</h3><p>${ext(p)}</p><span class="bl-date">${esc(fmtCorto(p.fecha) || "sin fecha")} ${chipSt(p)}</span></button>`).join("")}</div>` : ""}</div>`;
   }
   v.innerHTML = html;
 }
-$("plat-view").addEventListener("click", e => { const t = e.target.closest("[data-id]"); if (!t) return; const p = posts.find(x => x.id === t.dataset.id); if (p) abrirPublicar(p); });
+$("plat-view").addEventListener("click", e => { if (e.target.closest("[data-editar-perfil]")) { abrirEditorPerfil(plat); return; } const t = e.target.closest("[data-id]"); if (!t) return; const p = posts.find(x => x.id === t.dataset.id); if (p) abrirPublicar(p); });
 
 function renderFeed(){
   const P = PLATS[plat], esIG = plat === "instagram";
-  $("plat-name").textContent = P.n; $("prof-bio").textContent = P.bio;
-  $("ig-view").classList.toggle("hidden", !esIG); $("ig-stats").classList.toggle("hidden", !esIG); $("ig-profile").classList.toggle("hidden", !esIG); $("btn-sort").classList.toggle("hidden", !esIG);
+  $("plat-name").textContent = P.n;
+  $("ig-view").classList.toggle("hidden", !esIG); $("btn-sort").classList.toggle("hidden", !esIG);
   $("plat-view").classList.toggle("hidden", esIG);
   if (!esIG) { renderPlataforma(); return; }
   const list = feedList();
   const feed = feedOrder(list);
   const st = list.filter(p => p.tipo === "Historia" && !esPauta(p)).sort((a, b) => String(a.fecha || "").localeCompare(String(b.fecha || "")));
-  $("st-feed").textContent = feed.length; $("st-img").textContent = feed.filter(p => p.imagen_path).length; $("st-story").textContent = st.length;
+  renderIgHeader(feed.length, st);
+  $("ig-plan").textContent = `Plan de este filtro: ${feed.length} en el feed · ${feed.filter(p => p.imagen_path).length} con imagen · ${st.length} historias`;
   const otras = list.filter(p => (FUERA_DEL_FEED.includes(p.tipo) && p.tipo !== "Historia") || esPauta(p)).length;
   const internos = feedListTodo().filter(esInterno).length;
   $("st-otras").textContent = [otras ? `${otras} de otras plataformas o de pauta (TikTok, Pin, Blog, YouTube, Pauta) no se muestran aquí; búscalos con el menú de plataformas.` : "", internos ? `${internos} de “Contenidos bodas” son internos y no aparecen en el Feed.` : ""].filter(Boolean).join(" ") + (otras || internos ? " Están en la Parrilla y el Calendario." : "");
@@ -643,9 +687,74 @@ function renderFeed(){
   });
   g.appendChild(frag);
   const s = $("stories");
-  s.innerHTML = `<button type="button" class="story story-add" id="story-add"><div class="ring"><span>＋</span></div>Nueva</button>` + st.map(p => { const src = thumbUrl(p.imagen_path); return `<button type="button" class="story" data-id="${p.id}"><div class="ring"><span style="${src ? `background-image:url('${esc(src)}')` : ""}"></span></div>${esc(fmtCorto(p.fecha))}</button>`; }).join("");
+  s.innerHTML = st.map(p => { const src = thumbUrl(p.imagen_path); return `<button type="button" class="story" data-id="${p.id}"><div class="ring"><span style="${src ? `background-image:url('${esc(src)}')` : ""}"></span></div>${esc(fmtCorto(p.fecha))}</button>`; }).join("")
+    + `<button type="button" class="story story-add" id="story-add"><div class="ring"><span>＋</span></div>Nueva</button>`;
 }
 $("feed-grid").addEventListener("click", e => { const t = e.target.closest(".tile"); if (!t) return; const p = posts.find(x => x.id === t.dataset.id); if (p) abrirPublicar(p); });
+
+/* ---------- Editor de perfil de cada red ---------- */
+const PF_CAMPOS = {
+  instagram: { campos: ["usuario","categoria","bio","link","seguidores","seguidos"] },
+  tiktok:    { campos: ["usuario","bio","link","seguidores","seguidos","extra"], extra: "Me gusta (total)" },
+  pinterest: { campos: ["usuario","bio","link","seguidores","seguidos","extra"], extra: "Visualizaciones mensuales" },
+  facebook:  { campos: ["categoria","ubicacion","bio","link","seguidores","extra"], extra: "Me gusta de la página", portada: true },
+  pauta:     { campos: ["link","extra"], extra: "Botón del anuncio (ej. Más información)", sinFoto: true, nota: "Los anuncios usan la foto y el usuario de Instagram." },
+  blog:      { campos: ["bio","link"], bio: "Título del journal", foto: "Logo del blog" },
+};
+let pfPlat = "", pfFile = null, pfFile2 = null, pfUrl = "", pfUrl2 = "";
+function abrirEditorPerfil(k){
+  pfPlat = k; pfFile = pfFile2 = null; const P = pf(k), C = PF_CAMPOS[k] || PF_CAMPOS.instagram;
+  $("pfm-t").textContent = "Editar perfil de " + PLATS[k].n;
+  ["nombre","usuario","categoria","ubicacion","bio","link","seguidores","seguidos","extra"].forEach(c => { $("pf-" + c).value = P[c] || ""; });
+  document.querySelectorAll("#pfm-form [data-pf]").forEach(l => l.classList.toggle("hidden", !C.campos.includes(l.dataset.pf)));
+  $("pf-extra-l").textContent = C.extra || "Extra"; $("pf-bio-l").textContent = C.bio || "Presentación / bio";
+  $("pfm-portada-wrap").classList.toggle("hidden", !C.portada);
+  document.querySelector(".pfm-foto").classList.toggle("hidden", !!C.sinFoto);
+  $("pfm-av-btn").textContent = C.foto ? "Cambiar " + C.foto.toLowerCase() : "Cambiar foto de perfil";
+  $("pfm-todas").checked = false; $("pfm-todas").parentElement.classList.toggle("hidden", k === "blog");
+  pintarFotosPerfil(); $("pfm-msg").textContent = C.nota || "";
+  $("pfm").classList.remove("hidden"); document.body.classList.add("sv-open");
+  setTimeout(() => $("pf-nombre").focus(), 50);
+}
+function pintarFotosPerfil(){
+  const f = pfUrl || urlOf(pf(pfPlat).foto_path), c = pfUrl2 || urlOf(pf(pfPlat).portada_path);
+  $("pfm-av").innerHTML = `<img src="${esc(f || "icons/simbolo-arena.png")}" alt="">`; $("pfm-av").classList.toggle("foto", !!f);
+  $("pfm-cover").style.backgroundImage = c ? `url('${c}')` : ""; $("pfm-cover").textContent = c ? "" : "Sin portada (se usa la primera imagen del mes)";
+}
+function cerrarEditorPerfil(){ $("pfm").classList.add("hidden"); document.body.classList.remove("sv-open"); if (pfUrl) URL.revokeObjectURL(pfUrl); if (pfUrl2) URL.revokeObjectURL(pfUrl2); pfUrl = pfUrl2 = ""; pfFile = pfFile2 = null; }
+$("pfm-close").addEventListener("click", cerrarEditorPerfil);
+$("pfm-cancel").addEventListener("click", cerrarEditorPerfil);
+$("pfm").addEventListener("click", e => { if (e.target.id === "pfm") cerrarEditorPerfil(); });
+document.addEventListener("keydown", e => { if (e.key === "Escape" && !$("pfm").classList.contains("hidden")) cerrarEditorPerfil(); });
+["pfm-av","pfm-av-btn"].forEach(id => $(id).addEventListener("click", () => $("pfm-file").click()));
+["pfm-cover","pfm-cover-btn"].forEach(id => $(id).addEventListener("click", () => $("pfm-file2").click()));
+$("pfm-file").addEventListener("change", e => { const f = e.target.files[0]; e.target.value = ""; if (!f) return; pfFile = f; if (pfUrl) URL.revokeObjectURL(pfUrl); pfUrl = URL.createObjectURL(f); pintarFotosPerfil(); });
+$("pfm-file2").addEventListener("change", e => { const f = e.target.files[0]; e.target.value = ""; if (!f) return; pfFile2 = f; if (pfUrl2) URL.revokeObjectURL(pfUrl2); pfUrl2 = URL.createObjectURL(f); pintarFotosPerfil(); });
+$("pfm-form").addEventListener("submit", async e => {
+  e.preventDefault(); if (!pfPlat) return;
+  const btn = $("pfm-save"); btn.disabled = true; const msg = t => $("pfm-msg").textContent = t;
+  try {
+    const row = { plataforma: pfPlat, updated_at: new Date().toISOString() };
+    ["nombre","usuario","categoria","ubicacion","bio","link","seguidores","seguidos","extra"].forEach(c => { row[c] = $("pf-" + c).value.trim() || null; });
+    if (row.usuario) row.usuario = row.usuario.replace(/^@/, "");
+    const viejas = [];
+    if (pfFile) { msg("Subiendo foto…"); const p = await uploadImage(pfFile, "perfiles"); if (pf(pfPlat).foto_path) viejas.push(pf(pfPlat).foto_path); row.foto_path = p; }
+    if (pfFile2) { msg("Subiendo portada…"); const p = await uploadImage(pfFile2, "perfiles"); if (pf(pfPlat).portada_path) viejas.push(pf(pfPlat).portada_path); row.portada_path = p; }
+    msg("Guardando…");
+    const { error } = await sb.from("perfiles").upsert(row);
+    if (error) throw error;
+    if ($("pfm-todas").checked) {
+      const foto = row.foto_path || pf(pfPlat).foto_path;
+      if (foto) { const otras = Object.keys(PLATS).filter(k => k !== pfPlat && k !== "blog");
+        const { error: e2 } = await sb.from("perfiles").upsert(otras.map(k => ({ plataforma: k, foto_path: foto, updated_at: new Date().toISOString() }))); if (e2) throw e2; }
+    }
+    await loadPerfiles();
+    const enUso = new Set(Object.values(perfiles).flatMap(r => [r.foto_path, r.portada_path]));
+    const borrar = viejas.filter(p => p && !enUso.has(p)); if (borrar.length) sb.storage.from(CFG.bucket).remove(borrar.flatMap(p => [p, thumbOf(p)]));
+    cerrarEditorPerfil(); renderFeed();
+  } catch (err) { msg(errMsg(err)); }
+  finally { btn.disabled = false; }
+});
 
 /* ---------- Vista "listo para publicar": copiar caption y guardar imágenes ---------- */
 let pubPost = null;

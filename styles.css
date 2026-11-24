@@ -657,3 +657,89 @@ body.sv-open{overflow:hidden}
 .pn-img{container-type:inline-size}
 .pn-img img{height:auto;max-height:210cqw;object-fit:cover}
 .pn-img .ph{aspect-ratio:var(--pn-r,2/3)}
+
+/* ===== Instagram: perfil como en la app ===== */
+.ig-wrap{background:#fff;color:#000;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;border:1px solid #dbdbdb;border-radius:12px;overflow:hidden;margin-top:12px}
+.igp{padding:0 0 6px}
+.igp svg,.ig-tabs svg{width:22px;height:22px;fill:none;stroke:currentColor;stroke-width:1.7;stroke-linecap:round;stroke-linejoin:round}
+.igp-top{display:none;justify-content:space-between;align-items:center;padding:10px 14px;font-size:18px}
+.igp-main{display:flex;gap:28px;align-items:center;padding:26px 28px 10px}
+.igp-av{flex:none;border:0;background:none;padding:4px;border-radius:50%;cursor:pointer}
+.igp-av.ring{background:linear-gradient(45deg,#FEDA75,#FA7E1E,#D62976,#962FBF,#4F5BD5)}
+.igp-av .pf-av{border:3px solid #fff}
+.igp-foto{width:150px;height:150px}
+.igp-info{flex:1;min-width:0;display:flex;flex-direction:column;gap:12px}
+.igp-row1{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.igp-row1 h2{font:400 20px/1.2 inherit;font-family:inherit;margin:0 10px 0 0;color:#000}
+.igp-btn{background:#efefef;border-radius:8px;padding:7px 16px;font-weight:600;font-size:14px;cursor:pointer;color:#000;text-align:center}
+.igp-btn:hover{background:#dbdbdb}
+.igp-name{font-weight:600;font-size:14px}
+.igp-stats{display:flex;gap:36px;font-size:16px}
+.igp-stats b{font-weight:600}
+.igp-bio{font-size:14px;line-height:1.4;white-space:pre-wrap;display:flex;flex-direction:column;gap:2px}
+.igp-cat{color:#737373}
+.igp-link{display:inline-flex;align-items:center;gap:4px;color:#00376B;font-weight:600;text-decoration:none}
+.igp-link svg{width:14px;height:14px}
+.igp-btns-m{display:none}
+#ig-view #stories-wrap{padding:10px 24px 4px}
+#ig-view .stories{gap:22px}
+#ig-view .story{width:80px;color:#000;font-size:12px;font-weight:600}
+#ig-view .story .ring{width:77px;height:77px;background:#dbdbdb;padding:2px}
+#ig-view .story .ring span{border:3px solid #fff}
+#ig-view .story-add .ring{background:#dbdbdb}
+#ig-view .story-add .ring span{background:#fafafa !important;color:#000;font-size:34px;font-weight:200}
+.ig-tabs{display:flex;justify-content:center;gap:60px;border-top:1px solid #dbdbdb;margin-top:12px}
+.ig-tabs span{display:flex;align-items:center;gap:6px;padding:14px 0;color:#737373;font-size:12px;letter-spacing:.08em;text-transform:uppercase;margin-top:-1px}
+.ig-tabs span b{font-weight:600}
+.ig-tabs svg{width:14px;height:14px}
+.ig-tabs .on{color:#000;border-top:1px solid #000}
+#ig-view .feed-grid{gap:2px;background:#fff}
+#ig-view .tile{aspect-ratio:3/4}
+.ig-plan{margin-top:10px}
+@media (max-width:760px){
+  .igp-top{display:flex}
+  .igp-main{gap:18px;padding:6px 14px 8px;align-items:center}
+  .igp-foto{width:82px;height:82px}
+  .igp-row1{display:none}
+  .igp-info{gap:6px}
+  .igp-stats{gap:0;justify-content:space-between;font-size:14px}
+  .igp-stats span{display:flex;flex-direction:column;line-height:1.25}
+  .igp-stats b{font-size:16px}
+  .igp-name{order:-1}
+  .igp-bio{padding:0}
+  .igp-main{flex-wrap:wrap}
+  .igp-bio{flex-basis:100%;order:3}
+  .igp-btns-m{display:flex;gap:6px;padding:4px 14px 4px}.igp-btns-m .igp-btn{flex:1}
+  #ig-view #stories-wrap{padding:8px 14px 0}
+  #ig-view .stories{gap:14px}
+  #ig-view .story{width:68px}
+  #ig-view .story .ring{width:64px;height:64px}
+  .ig-tabs{gap:0;justify-content:space-around}
+  .ig-tabs b{display:none}
+  .ig-tabs svg{width:24px;height:24px}
+  .ig-tabs span{padding:10px 0;flex:1;justify-content:center}
+  .ig-tabs .on{border-top:0;box-shadow:inset 0 -1px #000}
+}
+/* Foto de perfil real */
+.pf-av.foto img{width:100%;height:100%;object-fit:cover}
+.pf-av.foto{background:#efefef}
+/* Botón de editar perfil en cada red */
+.pf-edit{display:block;margin:0 0 8px auto;background:var(--marfil);border:1px solid var(--rosa);color:var(--terracota);border-radius:16px;padding:5px 12px;font:inherit;font-size:13px;cursor:pointer}
+/* Editor de perfil */
+.pfm-card{max-width:620px}
+.pfm-t{flex:1;font-size:16px}
+.pfm-body{padding:16px;overflow:auto;display:flex;flex-direction:column;gap:14px}
+.pfm-fotos{display:flex;gap:18px;flex-wrap:wrap;align-items:flex-start}
+.pfm-foto,.pfm-portada{display:flex;flex-direction:column;align-items:center;gap:6px}
+.pfm-portada{flex:1;min-width:220px;align-items:stretch}
+.pfm-portada.hidden,.pfm-foto.hidden,#pfm-form .hidden{display:none}
+.pfm-av{width:96px;height:96px;border-radius:50%;border:0;padding:0;background:var(--terracota);display:grid;place-items:center;overflow:hidden;cursor:pointer}
+.pfm-av img{width:60%}.pfm-av.foto img{width:100%;height:100%;object-fit:cover}
+.pfm-cover{aspect-ratio:2.7/1;border:1px dashed var(--rosa);border-radius:8px;background:var(--marfil) center/cover no-repeat;color:var(--taupe);font:inherit;font-size:12px;cursor:pointer}
+.pfm-chk{display:flex;align-items:center;gap:6px;font-size:12px;color:var(--chocolate)}
+.pfm-chk input{width:auto}
+.pfm-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px 12px}
+.pfm-grid label{display:flex;flex-direction:column;gap:4px;font-size:12px;color:var(--chocolate);margin:0}
+.pfm-grid .full{grid-column:1/-1}
+@media (max-width:560px){.pfm-grid{grid-template-columns:1fr}}
+.pfm-foot{display:flex;justify-content:flex-end;gap:8px}

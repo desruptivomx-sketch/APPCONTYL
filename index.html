@@ -21,7 +21,7 @@
 <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@400;600&family=Nunito+Sans:wght@400;600;700&display=swap" rel="stylesheet">
 <link rel="preload" href="fonts/the-seasons-regular.woff2" as="font" type="font/woff2" crossorigin>
 <link rel="preload" href="fonts/gotham-rounded-light.woff2" as="font" type="font/woff2" crossorigin>
-<link rel="stylesheet" href="styles.css?v=33">
+<link rel="stylesheet" href="styles.css?v=34">
 </head>
 <body>
 <!-- Pantalla de carga: se ve hasta que la app decide si mostrar la entrada o la parrilla -->
@@ -104,14 +104,6 @@
   <!-- FEED -->
   <main id="view-feed" class="view hidden">
     <div class="feed-main">
-      <div class="profile" id="ig-profile">
-        <div class="avatar" aria-hidden="true"><img src="icons/simbolo-arena.png" alt=""></div>
-        <div>
-          <h2 class="prof-name"><img src="icons/logo-color-texto.png" alt="YUC'ATÅLOVE" width="1000" height="106"></h2>
-          <p class="note" id="prof-bio">Destination weddings in Yucatán · Together as one</p>
-          <div class="stats" id="ig-stats"><span><b id="st-feed">0</b> en el feed</span><span><b id="st-img">0</b> con imagen</span><span><b id="st-story">0</b> historias</span></div>
-        </div>
-      </div>
       <div class="toolbar">
         <div class="left">
           <button type="button" class="plat-btn" id="plat-btn" aria-haspopup="menu" aria-expanded="false"><span id="plat-name">Instagram</span> ▾</button>
@@ -121,11 +113,15 @@
         <div class="right"><button class="btn ghost small" id="btn-sort" type="button">Ordenar por fecha</button></div>
       </div>
       <div id="ig-view">
-      <section id="stories-wrap" aria-label="Historias">
-        <div class="label-sm">Historias (no aparecen en la cuadrícula)</div>
+      <div class="ig-wrap">
+      <header class="igp" id="ig-profile"></header>
+      <section id="stories-wrap" aria-label="Historias destacadas">
         <div class="stories" id="stories"></div>
       </section>
+      <div class="ig-tabs" aria-hidden="true"><span class="on"><svg viewBox="0 0 24 24"><path d="M4 4h16v16H4zM4 9.3h16M4 14.6h16M9.3 4v16M14.6 4v16"/></svg><b>Publicaciones</b></span><span><svg viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="18" rx="4"/><path d="M3 8h18M8 3l3 5M14 3l3 5M10 11.5v6l5-3z"/></svg><b>Reels</b></span><span><svg viewBox="0 0 24 24"><path d="M12 3a5 5 0 0 1 5 5c0 4-5 6-5 6s-5-2-5-6a5 5 0 0 1 5-5zM4 21c1.5-3.5 4.5-5 8-5s6.5 1.5 8 5"/></svg><b>Etiquetadas</b></span></div>
       <section class="feed-grid" id="feed-grid" aria-label="Cuadrícula del feed"></section>
+      </div>
+      <p class="note ig-plan" id="ig-plan"></p>
       <p class="note" id="st-otras"></p>
       <p class="note">Toca un post para verlo como se publicará y copiar el caption o guardar sus imágenes. <span class="desk-only">Arrastra un cuadro sobre otro para cambiarlos de lugar. </span>Los posts se crean y editan en la Parrilla.</p>
       </div>
@@ -289,6 +285,32 @@
   </div>
 </aside>
 
+<div id="pfm" class="pub hidden" role="dialog" aria-modal="true" aria-labelledby="pfm-t">
+  <div class="pub-card pfm-card">
+    <div class="pub-head"><b id="pfm-t" class="pfm-t">Editar perfil</b><button type="button" class="pub-x" id="pfm-close" aria-label="Cerrar">✕</button></div>
+    <form id="pfm-form" class="pfm-body">
+      <div class="pfm-fotos">
+        <div class="pfm-foto"><button type="button" class="pfm-av" id="pfm-av" aria-label="Cambiar foto de perfil"></button><button type="button" class="link" id="pfm-av-btn">Cambiar foto de perfil</button>
+          <label class="pfm-chk"><input type="checkbox" id="pfm-todas"> Usar esta foto en todas las redes</label></div>
+        <div class="pfm-portada hidden" id="pfm-portada-wrap"><button type="button" class="pfm-cover" id="pfm-cover" aria-label="Cambiar portada"></button><button type="button" class="link" id="pfm-cover-btn">Cambiar portada</button></div>
+      </div>
+      <input type="file" id="pfm-file" accept="image/*" class="hidden"><input type="file" id="pfm-file2" accept="image/*" class="hidden">
+      <div class="pfm-grid">
+        <label>Nombre<input id="pf-nombre" maxlength="80"></label>
+        <label data-pf="usuario">Usuario<input id="pf-usuario" maxlength="60" placeholder="sin @"></label>
+        <label data-pf="categoria">Categoría<input id="pf-categoria" maxlength="80"></label>
+        <label data-pf="ubicacion">Ubicación<input id="pf-ubicacion" maxlength="80"></label>
+        <label class="full" data-pf="bio"><span id="pf-bio-l">Presentación / bio</span><textarea id="pf-bio" rows="4" maxlength="500"></textarea></label>
+        <label class="full" data-pf="link">Link<input id="pf-link" maxlength="200"></label>
+        <label data-pf="seguidores">Seguidores<input id="pf-seguidores" maxlength="20" placeholder="ej. 12.4 mil"></label>
+        <label data-pf="seguidos">Seguidos<input id="pf-seguidos" maxlength="20"></label>
+        <label data-pf="extra"><span id="pf-extra-l">Extra</span><input id="pf-extra" maxlength="20"></label>
+      </div>
+      <p class="note status-line" id="pfm-msg" role="status"></p>
+      <div class="pfm-foot"><button type="button" class="btn ghost" id="pfm-cancel">Cancelar</button><button type="submit" class="btn" id="pfm-save">Guardar perfil</button></div>
+    </form>
+  </div>
+</div>
 <div id="pub" class="pub hidden" role="dialog" aria-modal="true" aria-label="Post listo para publicar">
   <div class="pub-card">
     <div class="pub-head"><span class="sv-av"><img src="icons/simbolo-arena.png" alt=""></span><div class="pub-who"><b>yucatalove</b><span id="pub-meta"></span></div><span class="chip" id="pub-status"></span><button type="button" class="pub-x" id="pub-close" aria-label="Cerrar">✕</button></div>
@@ -333,7 +355,7 @@
 
 <div id="print-area" aria-hidden="true"></div>
 <script src="lib/supabase.js"></script>
-<script src="config.js?v=33"></script>
-<script src="app.js?v=33"></script>
+<script src="config.js?v=34"></script>
+<script src="app.js?v=34"></script>
 </body>
 </html>
