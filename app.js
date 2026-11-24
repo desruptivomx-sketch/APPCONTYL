@@ -479,7 +479,7 @@ function feedListTodo(){
 function feedList(){ return feedListTodo().filter(p => !esInterno(p)); }
 // Solo lo que aparece en la cuadrícula de Instagram: historias y otras plataformas quedan fuera
 const FUERA_DEL_FEED = ["Historia", "Pin", "TikTok", "Video YT", "Blog"];
-// La pauta (tipo o pilar "Pauta") es publicidad: no aparece en el feed orgánico (cuadrícula, historias ni Facebook)
+// La pauta (categoría "Pauta") es publicidad: no aparece en el feed orgánico (cuadrícula, historias ni Facebook)
 const enFeed = p => !FUERA_DEL_FEED.includes(p.tipo) && !esPauta(p);
 const feedOrder = list => list.filter(enFeed).sort((a, b) => (a.orden ?? 0) - (b.orden ?? 0) || String(b.fecha || "").localeCompare(String(a.fecha || "")));
 /* ---------- Plataformas del Feed (Instagram, TikTok, Pinterest, Facebook, Pauta, Blog) ---------- */
@@ -488,10 +488,11 @@ const PLATS = {
   tiktok:    { n: "TikTok", bio: "Videos de TikTok del mes", filtro: p => p.tipo === "TikTok", vacio: "No hay TikToks para este filtro. En la Parrilla, ponles tipo “TikTok”." },
   pinterest: { n: "Pinterest", bio: "Pines del mes", filtro: p => p.tipo === "Pin", vacio: "No hay pines para este filtro. En la Parrilla, ponles tipo “Pin”." },
   facebook:  { n: "Facebook", bio: "Así se verán en Facebook los posts del feed de Instagram", filtro: p => !FUERA_DEL_FEED.includes(p.tipo) && !esPauta(p), vacio: "No hay posts del feed para este filtro." },
-  pauta:     { n: "Pauta", bio: "Anuncios del mes", filtro: p => esPauta(p), vacio: "No hay pauta para este filtro. En la Parrilla, ponles tipo “Pauta”." },
+  pauta:     { n: "Pauta", bio: "Anuncios del mes", filtro: p => esPauta(p), vacio: "No hay pauta para este filtro. En la Parrilla, ponles la categoría (pilar) “Pauta”." },
   blog:      { n: "Blog", bio: "Artículos del blog", filtro: p => p.tipo === "Blog", vacio: "No hay artículos para este filtro. En la Parrilla, ponles tipo “Blog”." },
 };
-function esPauta(p){ return [p.tipo, p.pilar].some(x => String(x || "").trim().toLowerCase() === "pauta"); }
+// Pauta es una categoría (pilar): el post puede ser Reel, Carrusel o Post estático, pero no va al feed orgánico
+function esPauta(p){ return String(p.pilar || "").trim().toLowerCase() === "pauta"; }
 let plat = "instagram"; try { plat = sessionStorage.getItem("plat") || "instagram"; } catch (_) {}
 if (!PLATS[plat]) plat = "instagram";
 function abrirMenuPlat(anchor){
@@ -590,7 +591,7 @@ function renderPlataforma(){
   }
 
   if (plat === "pauta") html = `<div class="ad-feed">${list.length ? list.map(p => { const n = slidesOf(p).length; return `<button type="button" class="ig-ad" data-id="${p.id}">
-      <div class="ig-h">${av("ig-av")}<div><b>yucatalove</b><span>Publicidad</span></div>${chipSt(p)}<i>${I.dots}</i></div>
+      <div class="ig-h">${av("ig-av")}<div><b>yucatalove</b><span>Publicidad${p.tipo ? " · " + esc(p.tipo) : ""}</span></div>${chipSt(p)}<i>${I.dots}</i></div>
       <div class="ig-media">${img(p) ? `<img src="${esc(full(p))}" alt="" loading="lazy">` : ph(p)}${n > 1 ? `<span class="tile-n">1/${n}</span>` : ""}</div>
       <div class="ig-cta"><span>Más información</span><span>›</span></div>
       <div class="ig-icons"><span>${I.heart}${I.com}${I.send}</span><span>${I.save}</span></div>
