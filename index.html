@@ -21,7 +21,7 @@
 <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@400;600&family=Nunito+Sans:wght@400;600;700&display=swap" rel="stylesheet">
 <link rel="preload" href="fonts/the-seasons-regular.woff2" as="font" type="font/woff2" crossorigin>
 <link rel="preload" href="fonts/gotham-rounded-light.woff2" as="font" type="font/woff2" crossorigin>
-<link rel="stylesheet" href="styles.css?v=45">
+<link rel="stylesheet" href="styles.css?v=46">
 <link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@1,600&family=Montserrat:wght@500;600&family=Playfair+Display:wght@400&family=Raleway:wght@300;400;700&display=swap">
 </head>
@@ -180,9 +180,9 @@
       </section>
       <section class="card">
         <h3>Equipo</h3>
-        <p class="note">Solo los correos de esta lista pueden ver y editar la parrilla. Después de agregar un correo, esa persona crea su acceso en la pantalla de entrada.</p>
+        <p class="note" id="team-note">Solo los correos de esta lista pueden ver y editar la parrilla.</p>
         <ul class="opt-list" id="team-list"></ul>
-        <form class="inline-form" id="team-form">
+        <form class="inline-form hidden" id="team-form">
           <label for="tm-email" class="sr">Correo</label><input id="tm-email" type="email" inputmode="email" placeholder="correo@ejemplo.com" required>
           <label for="tm-nombre" class="sr">Nombre</label><input id="tm-nombre" type="text" placeholder="Nombre">
           <button class="btn small" type="submit">Agregar</button>
@@ -289,20 +289,20 @@
     </section>
     <label for="e-inspo">Inspo / Referencia<textarea id="e-inspo" rows="2" placeholder="Pega uno o varios enlaces"></textarea></label>
     <div class="lnks" id="e-inspo-links"></div>
-    <label for="e-comentarios">Comentarios<textarea id="e-comentarios" rows="3"></textarea></label>
     <label for="e-contenido">Contenido (link del material)<textarea id="e-contenido" rows="2" placeholder="Pega uno o varios enlaces"></textarea></label>
     <div class="lnks" id="e-contenido-links"></div>
     <p class="note status-line" id="e-msg" role="status"></p>
     <p class="note" id="e-last"></p>
     <details class="hist" id="hist"><summary>Historial de cambios <span id="h-n"></span></summary><ol class="h-list" id="h-list"></ol></details>
     <section class="coments" aria-labelledby="c-title">
-      <h4 id="c-title">Conversación del equipo</h4>
+      <h4 id="c-title">Comentarios del equipo</h4>
       <ol class="c-list" id="c-list"></ol>
       <form class="c-form" id="c-form" novalidate>
         <label for="c-text" class="sr">Escribe un comentario</label>
-        <textarea id="c-text" rows="2" placeholder="Escribe un mensaje para el equipo…" maxlength="4000"></textarea>
-        <button class="btn small" type="submit" id="c-send">Enviar</button>
+        <textarea id="c-text" rows="2" placeholder="Escribe un comentario…" maxlength="4000"></textarea>
+        <button class="btn small" type="submit" id="c-send">Comentar</button>
       </form>
+      <p class="note">Cada comentario se guarda con tu nombre y la hora.</p>
     </section>
     <button class="btn ghost small del" id="e-del" type="button">🗑 Eliminar este post</button>
   </div>
@@ -378,6 +378,22 @@
     <div class="actions"><button class="btn" value="ok" id="dlg-ok">Guardar</button><button class="btn ghost" value="cancel">Cancelar</button></div>
   </form>
 </dialog>
+<dialog id="cdlg" class="cdlg" aria-labelledby="cd-title">
+  <div class="dlg-body">
+    <div class="cd-head">
+      <div><h3 id="cd-title">Comentarios</h3><p class="note" id="cd-sub"></p></div>
+      <button class="icon-btn" id="cd-close" type="button" aria-label="Cerrar">✕</button>
+    </div>
+    <ol class="c-list" id="cd-list"></ol>
+    <form class="c-form" id="cd-form" novalidate>
+      <label for="cd-text" class="sr">Escribe un comentario</label>
+      <textarea id="cd-text" rows="2" placeholder="Escribe un comentario…" maxlength="4000"></textarea>
+      <button class="btn small" type="submit" id="cd-send">Comentar</button>
+    </form>
+    <p class="note">Se guarda con tu nombre y la hora.<span class="desk-only"> Enter envía; Mayús + Enter hace un salto de línea.</span></p>
+    <p class="note status-line" id="cd-msg" role="status"></p>
+  </div>
+</dialog>
 <dialog id="confirm" aria-labelledby="cf-title">
   <form method="dialog" class="dlg-body">
     <h3 id="cf-title">¿Eliminar?</h3>
@@ -388,7 +404,7 @@
 
 <div id="print-area" aria-hidden="true"></div>
 <script src="lib/supabase.js"></script>
-<script src="config.js?v=45"></script>
-<script src="app.js?v=45"></script>
+<script src="config.js?v=46"></script>
+<script src="app.js?v=46"></script>
 </body>
 </html>

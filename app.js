@@ -287,6 +287,7 @@ function subscribe(){
       if (payload.eventType === "DELETE") posts = posts.filter(p => p.id !== payload.old.id);
       else { const n = payload.new; const i = posts.findIndex(p => p.id === n.id); if (i >= 0) posts[i] = n; else posts.push(n); if (slidesOf(n).length) await signedUrls(allImagePaths([n])); }
       if (current && !editorDirty) { const c = posts.find(p => p.id === current.id); if (c) current = c; }
+      if (cdPost && !posts.find(p => p.id === cdPost.id)) $("cdlg").close();
       renderAll(true);
     })
     .on("postgres_changes", { event: "*", schema: "public", table: "opciones" }, () => loadOpciones())
@@ -294,7 +295,7 @@ function subscribe(){
     .on("postgres_changes", { event: "*", schema: "public", table: "comentarios" }, payload => {
       if (payload.eventType === "DELETE") comentarios = comentarios.filter(c => c.id !== payload.old.id);
       else if (!comentarios.find(c => c.id === payload.new.id)) comentarios.push(payload.new);
-      if (current) renderComentarios();
+      renderComentarios();
       renderAll(true);
     })
     .subscribe();
@@ -403,8 +404,8 @@ function pass(p){
   const hoy = new Date().toISOString().slice(0,10);
   for (const [k, v] of Object.entries(filters)) {
     if (!v) continue;
-    if (k === "__q") { const q = v.toLowerCase(); if (!["copy","caption","comentarios","inspo","contenido","pilar","tipo"].some(f => String(p[f] || "").toLowerCase().includes(q))) return false; continue; }
-    const val = p[k];
+    if (k === "__q") { const q = v.toLowerCase(); if (!["copy","caption","inspo","contenido","pilar","tipo"].some(f => String(p[f] || "").toLowerCase().includes(q)) && !textoComentarios(p.id).toLowerCase().includes(q)) return false; continue; }
+    const val = k === "comentarios" ? textoComentarios(p.id) : p[k];
     if (v === "__vacio") { if (val) return false; continue; }
     if (k === "fecha") { if (v === "__futuro" && !(val && val >= hoy)) return false; if (v === "__pasado" && !(val && val < hoy)) return false; continue; }
     if (k === "imagen_path") { if (v === "__con" && !val) return false; continue; }
@@ -419,6 +420,7 @@ function sortedRows(){
   const k = sortKey;
   rows.sort((a, b) => {
     let x = a[k] ?? "", y = b[k] ?? "";
+    if (k === "comentarios") { x = ultimoComentario(a.id); y = ultimoComentario(b.id); }
     if (k === "mes") { x = MESES.indexOf(x); y = MESES.indexOf(y); }
     if (k === "dia") { x = DIAS.indexOf(x); y = DIAS.indexOf(y); }
     if (x === "" || x === -1) return 1; if (y === "" || y === -1) return -1;
@@ -448,6 +450,7 @@ function cellHtml(p, c){
     return c.k === "status" ? `<div class="st-cell">${sel}${tomadoBolita(p)}</div>` : sel;
   }
   if (c.type === "thumb") { const u = thumbUrl(v); return v && u ? `<button class="icon-btn" data-img="${p.id}" title="Ver o cambiar imagen"><img class="thumb" src="${esc(u)}" alt="" loading="lazy" decoding="async"></button>` : `<button class="icon-btn" data-img="${p.id}" title="Subir imagen" aria-label="Subir imagen">＋</button>`; }
+  if (c.k === "comentarios") return comentCelda(p);
   if (c.type === "long" && LINK_FIELDS.includes(c.k) && linksDe(v).length) {
     const resto = String(v).replace(URL_RE, "").trim();
     return `<div class="lcell">${chipsLinks(v)}${resto ? `<span class="lnote">${esc(resto)}</span>` : ""}<button class="icon-btn ledit" data-long="${c.k}" title="Editar enlaces" aria-label="Editar ${esc(c.label)}">✎</button></div>`;
@@ -561,16 +564,17 @@ function renderBody(){
           <span class="pdate">${esc(p.dia ? p.dia + " · " : "")}${fmtCorto(p.fecha)}${p.semana ? " · " + esc(p.semana) : ""}</span>
           <span class="pcopy${p.copy ? "" : " empty"}">${esc(p.copy || "Sin copy")}</span>
           ${(linksDe(p.contenido).length || linksDe(p.inspo).length) ? `<span class="lnks">${chipsLinks(p.contenido)}${chipsLinks(p.inspo)}</span>` : ""}
-          <span class="pchips">${chip("tipo", p.tipo)}${chip("pilar", p.pilar)}${chip("status", p.status)}${tomadoBolita(p)}${chip("cumplio", p.cumplio)}${nComent(p.id) ? `<span class="cbadge">💬 ${nComent(p.id)}</span>` : ""}</span>
+          ${comentTarjeta(p)}
+          <span class="pchips">${chip("tipo", p.tipo)}${chip("pilar", p.pilar)}${chip("status", p.status)}${tomadoBolita(p)}${chip("cumplio", p.cumplio)}<button type="button" class="cbadge cb-btn${nComent(p.id) ? "" : " vacio"}" data-coment aria-label="${nComent(p.id) ? "Ver " + nComent(p.id) + " comentarios" : "Escribir un comentario"}">💬${nComent(p.id) ? " " + nComent(p.id) : ""}</button></span>
         </span></div></li>`;
     }).join("") : `<li class="empty-state">${emptyMsg}</li>`;
     return;
   }
-  $("tbody").innerHTML = rows.length ? rows.map(p => `<tr data-id="${p.id}">${COLS.map(c => `<td class="c-${c.k}${c.sticky ? " sticky" : ""}">${cellHtml(p, c)}</td>`).join("")}<td class="c-acc"><button class="icon-btn" data-edit="${p.id}" title="Abrir editor y comentarios" aria-label="Abrir editor">✎${nComent(p.id) ? `<span class="cbadge"> 💬${nComent(p.id)}</span>` : ""}</button><button class="icon-btn" data-del="${p.id}" title="Eliminar post" aria-label="Eliminar post">🗑</button></td></tr>`).join("")
+  $("tbody").innerHTML = rows.length ? rows.map(p => `<tr data-id="${p.id}">${COLS.map(c => `<td class="c-${c.k}${c.sticky ? " sticky" : ""}">${cellHtml(p, c)}</td>`).join("")}<td class="c-acc"><button class="icon-btn" data-edit="${p.id}" title="Abrir editor" aria-label="Abrir editor">✎</button><button class="icon-btn" data-del="${p.id}" title="Eliminar post" aria-label="Eliminar post">🗑</button></td></tr>`).join("")
     : `<tr><td colspan="${COLS.length + 1}" class="td-vacio"><div class="vacio"><img src="icons/motivo-flor.svg" alt="" width="132" height="120"><p>${emptyMsg}</p></div></td></tr>`;
 }
 $("cards").addEventListener("keydown", e => { if ((e.key === "Enter" || e.key === " ") && e.target.matches(".pcard")) { e.preventDefault(); e.target.click(); } });
-$("cards").addEventListener("click", e => { if (reordenando.bloquearClick) { reordenando.bloquearClick = false; return; } if (e.target.closest("a")) return; const b = e.target.closest("[data-open]"); if (!b) return; const p = posts.find(x => x.id === b.dataset.open); if (p) openEditor(p); });
+$("cards").addEventListener("click", e => { if (reordenando.bloquearClick) { reordenando.bloquearClick = false; return; } if (e.target.closest("a")) return; const b = e.target.closest("[data-open]"); if (!b) return; const p = posts.find(x => x.id === b.dataset.open); if (!p) return; if (e.target.closest("[data-coment]")) abrirComentarios(p); else openEditor(p); });
 $("tbody").addEventListener("change", e => {
   const el = e.target, tr = el.closest("tr"); if (!tr || !el.dataset.k) return;
   const id = tr.dataset.id, k = el.dataset.k, v = el.value || null;
@@ -581,10 +585,11 @@ $("tbody").addEventListener("change", e => {
   savePatch(id, patch, k === "fecha" && (patch.dia || patch.mes));
 });
 $("tbody").addEventListener("click", e => {
-  const long = e.target.closest("[data-long]"), del = e.target.closest("[data-del]"), img = e.target.closest("[data-img]"), ed = e.target.closest("[data-edit]");
+  const long = e.target.closest("[data-long]"), del = e.target.closest("[data-del]"), img = e.target.closest("[data-img]"), ed = e.target.closest("[data-edit]"), com = e.target.closest("[data-coment]");
   const tr = e.target.closest("tr"); if (!tr) return;
   const p = posts.find(x => x.id === tr.dataset.id); if (!p) return;
-  if (long) editLong(p, long.dataset.long);
+  if (com) abrirComentarios(p);
+  else if (long) editLong(p, long.dataset.long);
   else if (del) confirmDelete(p);
   else if (img || ed) openEditor(p);
 });
@@ -1171,7 +1176,7 @@ async function nuevoDesdeFeed(tipo){
 
 
 /* ---------- Editor de post ---------- */
-const E_FIELDS = ["fecha","dia","semana","mes","tipo","pilar","status","cumplio","copy","caption","inspo","comentarios","contenido"];
+const E_FIELDS = ["fecha","dia","semana","mes","tipo","pilar","status","cumplio","copy","caption","inspo","contenido"];   // los comentarios van aparte, firmados
 let editorDirty = false;
 function emsg(t, warn){ const m = $("e-msg"); m.textContent = t || ""; m.classList.toggle("warn", !!warn); }
 function setPreview(src){ $("e-preview").innerHTML = src ? `<img src="${esc(src)}" alt="Imagen del post">` : "Subir imagen o portada<br><span class='note'>Vertical 4:5 se ve mejor</span>"; }
@@ -1179,7 +1184,7 @@ function openEditor(p){
   current = p; pendingFile = null; editorDirty = false; if (pendingUrl) { URL.revokeObjectURL(pendingUrl); pendingUrl = null; }
   $("e-title").textContent = p.fecha ? `Post del ${fmtCorto(p.fecha)}` : "Post nuevo";
   ["dia","semana","mes","tipo","pilar","status","cumplio"].forEach(k => { $("e-"+k).innerHTML = optionsHtml(k === "dia" ? "dia" : k === "mes" ? "mes" : k, p[k], true); $("e-"+k).value = p[k] || ""; });
-  ["fecha","copy","caption","inspo","comentarios","contenido"].forEach(k => { $("e-"+k).value = p[k] || ""; });
+  ["fecha","copy","caption","inspo","contenido"].forEach(k => { $("e-"+k).value = p[k] || ""; });
   LINK_FIELDS.forEach(k => { $("e-"+k+"-links").innerHTML = chipsLinks(p[k]); });
   pvIdx = 0; renderPreview(); renderSlides(); $("e-rmimg").classList.toggle("hidden", !p.imagen_path); emsg("");
   cargarHistorial(); iaLimpiar(); seoCargar(p); pintarTomado(); pintarPrevBlog();
@@ -1376,7 +1381,7 @@ const IA_DESTINO = { caption: "caption", pulir_caption: "caption", pulir_idea: "
 function iaLimpiar(){ iaOpciones = []; $("ia-out").innerHTML = ""; $("ia-extra").value = ""; }
 async function iaPedir(accion){
   if (!current || iaOcupado) return;
-  const post = { tipo: $("e-tipo").value, pilar: $("e-pilar").value, fecha: $("e-fecha").value, copy: $("e-copy").value, caption: $("e-caption").value, inspo: $("e-inspo").value, comentarios: $("e-comentarios").value };
+  const post = { tipo: $("e-tipo").value, pilar: $("e-pilar").value, fecha: $("e-fecha").value, copy: $("e-copy").value, caption: $("e-caption").value, inspo: $("e-inspo").value, comentarios: textoComentarios(current.id) };
   if (accion === "pulir_caption" && !post.caption.trim()) { $("ia-out").innerHTML = '<p class="note warn">Primero escribe un caption para poder pulirlo, o usa “Sugerir caption”.</p>'; return; }
   if (accion === "pulir_idea" && !post.copy.trim()) { $("ia-out").innerHTML = '<p class="note warn">Escribe la idea en el campo Copy y la pulo.</p>'; return; }
   iaOcupado = true; iaAccion = accion;
@@ -1445,12 +1450,27 @@ function histTexto(h){
 }
 
 
-/* ---------- Comentarios ---------- */
+/* ---------- Comentarios firmados ----------
+   Cada comentario es una entrada aparte con quién lo puso y cuándo (tabla "comentarios"); nadie escribe
+   encima del de otra persona. La columna Comentarios de la Parrilla muestra el último y abre la ventana
+   con todos; en el editor están al final. Lo borra su autor o quien administra (regla en la base). */
 async function loadComentarios(){
   const { data, error } = await sb.from("comentarios").select("*").order("created_at");
   if (!error) { comentarios = data || []; renderAll(); }
 }
-const nComent = id => comentarios.reduce((n, c) => n + (c.post_id === id ? 1 : 0), 0);
+let cIdx = null;   // comentarios agrupados por post; se rehace solo cuando la lista cambia
+function comentariosDe(id){
+  if (!cIdx || cIdx.src !== comentarios || cIdx.n !== comentarios.length) {
+    const m = new Map();
+    for (const c of comentarios) { const l = m.get(c.post_id); if (l) l.push(c); else m.set(c.post_id, [c]); }
+    m.forEach(l => l.sort((a, b) => String(a.created_at).localeCompare(String(b.created_at))));
+    cIdx = { src: comentarios, n: comentarios.length, m };
+  }
+  return cIdx.m.get(id) || [];
+}
+const nComent = id => comentariosDe(id).length;
+const ultimoComentario = id => { const l = comentariosDe(id); return l.length ? String(l[l.length - 1].created_at || "") : ""; };
+const textoComentarios = id => comentariosDe(id).map(c => `${nombreDe(c.autor)}: ${c.texto}`).join("\n");
 function nombreDe(email){
   const m = team.find(t => t.email.toLowerCase() === String(email || "").toLowerCase());
   return (m && m.nombre) || String(email || "Alguien").split("@")[0];
@@ -1463,35 +1483,94 @@ function cuando(ts){
   if (diff < 1440 && d.getDate() === new Date().getDate()) return `hoy ${d.toLocaleTimeString("es-MX", { hour: "2-digit", minute: "2-digit" })}`;
   return d.toLocaleString("es-MX", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" });
 }
+// Nombre corto para espacios chicos: el primer nombre, o dos palabras si hay otra persona con el mismo (Ana Belén / Ana Laura)
+function nombreCorto(email){
+  const p = nombreDe(email).split(/\s+/), yo = String(email || "").toLowerCase();
+  const repetido = team.some(t => t.email.toLowerCase() !== yo && String(t.nombre || "").trim().split(/\s+/)[0].toLowerCase() === p[0].toLowerCase());
+  return repetido && p[1] ? p[0] + " " + p[1] : p[0];
+}
+const fechaLarga = ts => { try { return new Date(ts).toLocaleString("es-MX", { dateStyle: "full", timeStyle: "short" }); } catch (_) { return ""; } };
+function bolitaDe(email, chica){
+  const n = nombreDe(email), c = colorPersona(email);
+  return `<span class="bolita${chica ? " ch" : ""}" style="background:${c};color:${textOn(c)}" aria-hidden="true">${esc(iniciales(n))}</span>`;
+}
+// Celda de la columna Comentarios: el último comentario con la bolita de quien lo puso (y cuántos hay)
+function comentCelda(p){
+  const l = comentariosDe(p.id);
+  if (!l.length) return '<button class="txt empty" data-coment title="Escribir un comentario" aria-label="Escribir un comentario"><span class="clamp">—</span></button>';
+  const u = l[l.length - 1], n = nombreDe(u.autor);
+  return `<button class="txt cm" data-coment title="${esc(n)} · ${esc(cuando(u.created_at))}. Clic para ver ${l.length > 1 ? "los " + l.length + " comentarios" : "el comentario"} y responder">${bolitaDe(u.autor, true)}<span class="clamp"><b>${esc(nombreCorto(u.autor))}:</b> ${esc(String(u.texto).replace(/\s*\n+\s*/g, " "))}</span>${l.length > 1 ? `<span class="cm-n">${l.length}</span>` : ""}</button>`;
+}
+// En las tarjetas de celular: una línea con el último comentario y su autor
+function comentTarjeta(p){
+  const l = comentariosDe(p.id); if (!l.length) return "";
+  const u = l[l.length - 1];
+  return `<span class="pcoment" data-coment>${bolitaDe(u.autor, true)}<span><b>${esc(nombreCorto(u.autor))}:</b> ${esc(String(u.texto).replace(/\s*\n+\s*/g, " "))}</span></span>`;
+}
 function renderUltimo(){
   const p = current; if (!p) return;
   $("e-last").textContent = p.updated_by ? `Último cambio: ${nombreDe(p.updated_by)} · ${cuando(p.updated_at)}` : "";
 }
-function renderComentarios(){
-  if (!current) return;
-  const list = comentarios.filter(c => c.post_id === current.id).sort((a, b) => String(a.created_at).localeCompare(String(b.created_at)));
-  const yo = ((user && user.email) || "").toLowerCase();
-  $("c-list").innerHTML = list.length ? list.map(c => `<li class="c-item${c.autor.toLowerCase() === yo ? " mio" : ""}"><div class="c-meta"><span><b>${esc(nombreDe(c.autor))}</b> · ${esc(cuando(c.created_at))}</span>${c.autor.toLowerCase() === yo ? `<button type="button" class="c-del" data-cdel="${c.id}">Borrar</button>` : ""}</div><div class="c-txt">${esc(c.texto)}</div></li>`).join("")
-    : '<li class="c-empty">Todavía no hay mensajes sobre este post.</li>';
+function comentariosHtml(id){
+  const yo = ((user && user.email) || "").toLowerCase(), l = comentariosDe(id);
+  return l.length ? l.map(c => {
+    const mio = String(c.autor || "").toLowerCase() === yo;
+    return `<li class="c-item${mio ? " mio" : ""}">${bolitaDe(c.autor)}<div class="c-cuerpo"><div class="c-meta"><span><b>${esc(nombreDe(c.autor))}</b> · <time datetime="${esc(c.created_at || "")}" title="${esc(fechaLarga(c.created_at))}">${esc(cuando(c.created_at))}</time></span>${mio || esAdmin ? `<button type="button" class="c-del" data-cdel="${esc(c.id)}">Borrar</button>` : ""}</div><div class="c-txt">${esc(c.texto)}</div></div></li>`;
+  }).join("") : '<li class="c-empty">Todavía no hay comentarios en este post.</li>';
 }
+// Pinta los comentarios donde estén a la vista: en el editor y/o en la ventana de comentarios
+function renderComentarios(){
+  if (current) $("c-list").innerHTML = comentariosHtml(current.id);
+  if (cdPost && $("cdlg").open) $("cd-list").innerHTML = comentariosHtml(cdPost.id);
+}
+async function enviarComentario(postId, ta, btn, aviso){
+  const t = ta.value.trim(); if (!t || !postId || btn.disabled) return false;
+  btn.disabled = true;
+  const { data, error } = await sb.from("comentarios").insert({ post_id: postId, texto: t, autor: user.email }).select().single();
+  btn.disabled = false;
+  if (error) { aviso(errMsg(error), true); return false; }
+  if (data && !comentarios.find(c => c.id === data.id)) comentarios.push(data);
+  ta.value = ""; aviso(""); renderComentarios(); renderAll();
+  return true;
+}
+// Borrar pide un segundo clic (para no borrar por accidente el comentario de alguien)
+async function clicBorrarComentario(e, aviso){
+  const b = e.target.closest("[data-cdel]"); if (!b) return;
+  if (!b.dataset.ok) { b.dataset.ok = "1"; b.textContent = "¿Borrar? Sí"; setTimeout(() => { if (b.isConnected) { delete b.dataset.ok; b.textContent = "Borrar"; } }, 3500); return; }
+  const id = b.dataset.cdel; b.disabled = true;
+  const { error } = await sb.from("comentarios").delete().eq("id", id);
+  if (error) { b.disabled = false; aviso(errMsg(error), true); return; }
+  comentarios = comentarios.filter(c => c.id !== id); renderComentarios(); renderAll();
+}
+const cdAviso = (t, warn) => { const m = $("cd-msg"); m.textContent = t || ""; m.classList.toggle("warn", !!warn); };
+// En el editor
 $("c-form").addEventListener("submit", async e => {
-  e.preventDefault();
-  const t = $("c-text").value.trim(); if (!t || !current) return;
-  $("c-send").disabled = true;
-  const { data, error } = await sb.from("comentarios").insert({ post_id: current.id, texto: t, autor: user.email }).select().single();
-  $("c-send").disabled = false;
-  if (error) { emsg(errMsg(error), true); return; }
-  if (!comentarios.find(c => c.id === data.id)) comentarios.push(data);
-  $("c-text").value = ""; renderComentarios(); renderAll();
-  const l = $("c-list"); l.lastElementChild && l.lastElementChild.scrollIntoView({ block: "nearest" });
+  e.preventDefault(); if (!current) return;
+  if (await enviarComentario(current.id, $("c-text"), $("c-send"), emsg)) { const l = $("c-list"); l.lastElementChild && l.lastElementChild.scrollIntoView({ block: "nearest" }); }
 });
 $("c-text").addEventListener("keydown", e => { if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) { e.preventDefault(); $("c-form").requestSubmit(); } });
-$("c-list").addEventListener("click", async e => {
-  const b = e.target.closest("[data-cdel]"); if (!b) return;
-  const { error } = await sb.from("comentarios").delete().eq("id", b.dataset.cdel);
-  if (error) { emsg(errMsg(error), true); return; }
-  comentarios = comentarios.filter(c => c.id !== b.dataset.cdel); renderComentarios(); renderAll();
+$("c-list").addEventListener("click", e => clicBorrarComentario(e, emsg));
+// Ventana de comentarios (desde la columna de la Parrilla o el globito 💬 en celular)
+let cdPost = null;
+function abrirComentarios(p){
+  const d = $("cdlg"); cdPost = p;
+  $("cd-title").textContent = `Comentarios${p.fecha ? " · " + fmtCorto(p.fecha) : ""}`;
+  $("cd-sub").textContent = [p.tipo, String(p.copy || "").replace(/\s+/g, " ").trim().slice(0, 90)].filter(Boolean).join(" · ");
+  $("cd-text").value = ""; cdAviso("");
+  if (!d.open) d.showModal();
+  renderComentarios();
+  const l = $("cd-list"); l.scrollTop = l.scrollHeight;
+  $("cd-text").focus();
+}
+$("cdlg").addEventListener("close", () => { cdPost = null; });
+$("cdlg").addEventListener("click", e => { if (e.target === $("cdlg")) $("cdlg").close(); });   // clic fuera de la ventana
+$("cd-close").addEventListener("click", () => $("cdlg").close());
+$("cd-form").addEventListener("submit", async e => {
+  e.preventDefault(); if (!cdPost) return;
+  if (await enviarComentario(cdPost.id, $("cd-text"), $("cd-send"), cdAviso)) { const l = $("cd-list"); l.scrollTop = l.scrollHeight; $("cd-text").focus(); }
 });
+$("cd-text").addEventListener("keydown", e => { if (e.key === "Enter" && !e.shiftKey && !e.isComposing && !isMobile()) { e.preventDefault(); $("cd-form").requestSubmit(); } });
+$("cd-list").addEventListener("click", e => clicBorrarComentario(e, cdAviso));
 
 /* ---------- Resumen ---------- */
 function crossTable(el, rowsKey, rowVals, colKey, colVals, rowsFilter){
@@ -1600,7 +1679,7 @@ async function exportarPDF(){
       <div class="pr-tags">${tagHtml("tipo", p.tipo)}${tagHtml("pilar", p.pilar)}${tagHtml("status", p.status)}${p.cumplio ? tagHtml("cumplio", p.cumplio) : ""}</div>
       ${p.copy ? `<div class="lbl">Copy</div><div class="txt">${esc(p.copy)}</div>` : ""}
       ${p.caption ? `<div class="lbl">Caption</div><div class="txt">${esc(p.caption)}</div>` : ""}
-      ${p.comentarios ? `<div class="lbl">Comentarios</div><div class="txt">${esc(p.comentarios)}</div>` : ""}
+      ${nComent(p.id) ? `<div class="lbl">Comentarios</div><div class="txt">${comentariosDe(p.id).map(c => `<b>${esc(nombreDe(c.autor))}</b> (${esc(new Date(c.created_at).toLocaleDateString("es-MX", { day: "numeric", month: "short" }))}): ${esc(c.texto)}`).join("\n")}</div>` : ""}
       ${p.inspo ? `<div class="lbl">Inspo / Referencia</div><div class="txt">${linkify(p.inspo)}</div>` : ""}
       ${p.contenido ? `<div class="lbl">Contenido</div><div class="txt">${linkify(p.contenido)}</div>` : ""}
     </div></article>`; }).join("") || "<p>No hay publicaciones con fecha en este mes.</p>"}</section>`;
@@ -1654,19 +1733,29 @@ let team = [], esAdmin = false;
 async function loadTeam(){ const { data } = await sb.from("miembros").select("*").order("created_at"); team = data || [];
   if (user) { const n = nombreDe(user.email); $("who-email").textContent = n; $("who-email").title = user.email; } const yo = team.find(m => m.email.toLowerCase() === ((user && user.email) || "").toLowerCase()); esAdmin = !!(yo && yo.admin); $("uso-card").classList.toggle("hidden", !esAdmin); if (view === "ajustes") { renderTeam(); if (esAdmin) loadUso(); } }
 function renderTeam(){
-  $("team-list").innerHTML = team.length ? team.map(m => `<li><span class="grow">${esc(m.nombre ? m.nombre + " · " : "")}${esc(m.email)}</span>${m.email.toLowerCase() === ((user && user.email) || "").toLowerCase() ? '<span class="note">Tú</span>' : `<button class="icon-btn" data-rmt="${esc(m.email)}" title="Quitar" aria-label="Quitar ${esc(m.email)}">✕</button>`}</li>`).join("") : '<li class="note">No puedes ver el equipo hasta que tu correo esté en la lista.</li>';
+  const yo = ((user && user.email) || "").toLowerCase(), adm = team.find(m => m.admin);
+  $("team-list").innerHTML = team.length ? team.map(m => {
+    const mio = m.email.toLowerCase() === yo;
+    const accion = mio ? '<span class="note">Tú</span>' : (esAdmin && !m.admin ? `<button class="icon-btn" data-rmt="${esc(m.email)}" title="Quitar" aria-label="Quitar ${esc(m.email)}">✕</button>` : "");
+    return `<li><span class="grow">${esc(m.nombre ? m.nombre + " · " : "")}${esc(m.email)}${m.admin ? ' <span class="adm">Administra</span>' : ""}</span>${accion}</li>`;
+  }).join("") : '<li class="note">No puedes ver el equipo hasta que tu correo esté en la lista.</li>';
+  // Solo quien administra ve el formulario para agregar y los botones para quitar (y la base de datos lo exige igual)
+  $("team-form").classList.toggle("hidden", !esAdmin);
+  $("team-note").textContent = "Solo los correos de esta lista pueden ver y editar la parrilla. " + (esAdmin
+    ? "Solo tú puedes agregar o quitar personas. Después de agregar un correo, esa persona crea su acceso en la pantalla de entrada."
+    : `Solo ${adm ? (adm.nombre || adm.email) : "quien administra"} puede agregar o quitar personas.`);
 }
 $("team-list").addEventListener("click", e => {
-  const b = e.target.closest("[data-rmt]"); if (!b) return;
+  const b = e.target.closest("[data-rmt]"); if (!b || !esAdmin) return;
   const em = b.dataset.rmt, d = $("confirm"); $("cf-text").textContent = `${em} ya no podrá ver ni editar la parrilla.`;
-  d.onclose = async () => { if (d.returnValue !== "ok") return; const { error } = await sb.from("miembros").delete().eq("email", em); if (error) banner(errMsg(error)); else loadTeam(); };
+  d.onclose = async () => { if (d.returnValue !== "ok") return; const { data, error } = await sb.from("miembros").delete().eq("email", em).select("email"); if (error) banner(errMsg(error)); else if (Array.isArray(data) && !data.length) banner("No se pudo quitar: solo quien administra puede hacerlo."); else { banner(""); loadTeam(); } };
   d.returnValue = ""; d.showModal();
 });
 $("team-form").addEventListener("submit", async e => {
-  e.preventDefault();
+  e.preventDefault(); if (!esAdmin) return;
   const email = $("tm-email").value.trim().toLowerCase(), nombre = $("tm-nombre").value.trim() || null; if (!email) return;
   const { error } = await sb.from("miembros").insert({ email, nombre });
-  if (error) banner(/duplicate/i.test(error.message) ? "Ese correo ya está en el equipo." : errMsg(error)); else { $("tm-email").value = ""; $("tm-nombre").value = ""; banner(""); loadTeam(); }
+  if (error) banner(/duplicate/i.test(error.message) ? "Ese correo ya está en el equipo." : /row-level security/i.test(error.message) ? "Solo quien administra puede agregar personas." : errMsg(error)); else { $("tm-email").value = ""; $("tm-nombre").value = ""; banner(""); loadTeam(); }
 });
 
 

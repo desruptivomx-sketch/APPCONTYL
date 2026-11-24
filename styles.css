@@ -1012,3 +1012,31 @@ tr.arrastrando td{background:var(--marfil) !important;opacity:.55}
   /* la flor se mece una vez, despacio */
   @keyframes lad-mece{0%,100%{transform:rotate(0deg);animation-timing-function:ease-out}25%{transform:rotate(.8deg);animation-timing-function:ease-in-out}75%{transform:rotate(-.8deg);animation-timing-function:ease-in}}
 }
+
+/* ===== Comentarios firmados (quién lo puso y cuándo) ===== */
+.bolita.ch{width:22px;height:22px;font-size:9px;border-width:1.5px}
+/* Celda de la Parrilla: bolita de quien comentó + su texto (2 líneas) + cuántos comentarios hay */
+.grid-table td .txt.cm{display:flex;align-items:flex-start;gap:6px}
+.grid-table td .txt.cm .clamp{flex:1;min-width:0}
+.grid-table td .txt b,.pcoment b{font-weight:600;color:var(--chocolate)}
+.cm-n{flex:none;min-width:20px;height:20px;padding:0 5px;border-radius:10px;background:var(--arena);border:1px solid var(--rosa);color:var(--chocolate);font-size:11px;font-weight:700;line-height:18px;text-align:center}
+/* Lista de comentarios (editor y ventana) */
+.c-item{display:flex;gap:8px;align-items:flex-start}
+.c-cuerpo{flex:1;min-width:0}
+.c-del{cursor:pointer;white-space:nowrap}
+.c-del[data-ok]{color:var(--terracota);font-weight:600}
+/* Ventana de comentarios */
+.cdlg{max-width:560px}
+.cd-head{display:flex;justify-content:space-between;gap:10px;align-items:flex-start}
+.cd-head h3{font-family:var(--display);font-weight:600;margin:0}
+.cd-head .note{margin-top:2px;overflow-wrap:anywhere}
+.cdlg .c-list{max-height:min(50vh,430px);overflow:auto;overscroll-behavior:contain}
+.cdlg .status-line:empty{display:none}
+/* Celular: último comentario en la tarjeta y globito para abrir los comentarios */
+.pcoment{display:flex;gap:6px;align-items:center;font-size:13px;min-width:0}
+.pcoment > span:last-child{flex:1;min-width:0;overflow:hidden;white-space:nowrap;text-overflow:ellipsis}
+.cb-btn{background:#fff;border:1px solid var(--linea);border-radius:999px;padding:1px 9px;min-height:24px;cursor:pointer}
+.cb-btn.vacio{color:var(--taupe);font-weight:400}
+@media (max-width:760px){.cdlg{width:calc(100% - 16px);max-height:calc(100dvh - 24px)}.cdlg .c-list{max-height:46dvh}.cdlg textarea{font-size:16px}}
+/* Equipo: etiqueta de quien administra */
+.adm{font-size:11px;font-weight:700;color:var(--terracota);border:1px solid var(--rosa);border-radius:999px;padding:1px 7px;margin-left:6px;white-space:nowrap}
