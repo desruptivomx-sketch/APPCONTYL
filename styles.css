@@ -539,7 +539,7 @@ body.sv-open{overflow:hidden}
 @media (min-width:700px){.pn-grid{gap:16px;padding:0 16px}}
 .pn-col{flex:1;min-width:0;display:flex;flex-direction:column;gap:14px}
 .pn-pin{display:block;width:100%;border:0;background:none;padding:0}
-.pn-img{position:relative;border-radius:16px;overflow:hidden;background:#efefef;min-height:140px}
+.pn-img{position:relative;border-radius:16px;overflow:hidden;background:#efefef}
 .pn-img img{width:100%;display:block}
 .pn-img .ph{aspect-ratio:2/3}
 .pn-img .chip.st{position:absolute;left:8px;bottom:8px}
@@ -651,3 +651,9 @@ body.sv-open{overflow:hidden}
 .pn-t{justify-content:space-between;align-items:center;padding:6px 2px 0;min-height:24px}
 .pn-t .chip.st{position:static}
 .pn-img .chip.st{display:none}
+
+/* Pinterest: la imagen conserva su proporción real, como en Pinterest (los pines muy largos se recortan a 1:2.1).
+   Sin imagen, cada marcador toma una proporción distinta para ver el acomodo escalonado. */
+.pn-img{container-type:inline-size}
+.pn-img img{height:auto;max-height:210cqw;object-fit:cover}
+.pn-img .ph{aspect-ratio:var(--pn-r,2/3)}
