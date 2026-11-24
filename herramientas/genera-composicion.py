@@ -238,10 +238,10 @@ CSS = """
 .ylm{color:__COLOR__;overflow:visible}
 .ylm .d{fill:none;stroke:currentColor;stroke-linecap:round;stroke-linejoin:round;stroke-dasharray:1.06 3;stroke-dashoffset:1.06;opacity:0;animation:ylm-d var(--d) linear var(--t) forwards}
 .ylm .b{fill:currentColor;opacity:0;animation:ylm-o .01s linear var(--t) forwards}
-.ylm .c{fill:url(#ylm-foil);opacity:0;animation:ylm-o .18s linear var(--e) forwards}
+.ylm .c{fill:url(#ylm-foil) currentColor;opacity:0;animation:ylm-o .18s linear var(--e) forwards}
 .ylm .rv{animation:ylm-h .01s linear calc(var(--e) + .25s) forwards}
 .ylm .ylm-b{stop-color:var(--ylm-brillo,#F2A28B)}
-.ylm .p{fill:url(#ylm-foil);transform-box:fill-box;transform-origin:center;animation:ylm-p .6s cubic-bezier(.3,1.7,.5,1) var(--t) both}
+.ylm .p{fill:url(#ylm-foil) currentColor;transform-box:fill-box;transform-origin:center;animation:ylm-p .6s cubic-bezier(.3,1.7,.5,1) var(--t) both}
 @keyframes ylm-d{from{opacity:1;stroke-dashoffset:1.06}to{opacity:1;stroke-dashoffset:0}}
 @keyframes ylm-o{to{opacity:1}}
 @keyframes ylm-h{to{visibility:hidden}}

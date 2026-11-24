@@ -946,6 +946,10 @@ tr.arrastrando td{background:var(--marfil) !important;opacity:.55}
 .td-vacio .vacio{position:sticky;left:0;width:calc(100vw - 40px);max-width:1600px;padding:30px 16px 34px;text-align:center;color:var(--chocolate)}
 .td-vacio img{display:block;margin:0 auto 12px;width:132px;height:auto}
 .td-vacio p{margin:0}
+@media (prefers-reduced-motion:no-preference){
+  .empty-state::before,.td-vacio img{transform-origin:18% 97%;animation:flor-mece 5.5s ease-in-out infinite}
+  @keyframes flor-mece{0%,100%{transform:rotate(0deg)}25%{transform:rotate(2.2deg)}75%{transform:rotate(-2.2deg)}}
+}
 /* Firma al final de Ajustes */
 .firma{display:flex;flex-direction:column;align-items:center;gap:10px;margin:34px auto 10px;color:var(--taupe);font-size:11px;letter-spacing:.28em;text-transform:uppercase}
 .firma img{width:min(56vw,230px);height:auto}
