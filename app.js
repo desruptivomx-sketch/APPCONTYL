@@ -568,7 +568,7 @@ function renderPlataforma(){
         <div class="pn-btns"><span class="pn-share">Compartir</span><span class="pn-follow">Seguir</span></div></div>
       <div class="pn-tabs"><span class="on">Creados</span><span>Guardados</span></div>
       ${list.length ? (() => { const cols = innerWidth >= 1000 ? 5 : innerWidth >= 700 ? 4 : 2, C = Array.from({ length: cols }, () => []);
-        list.forEach((p, i) => C[i % cols].push(`<button type="button" class="pn-pin" data-id="${p.id}"><div class="pn-img">${media(p)}${chipSt(p)}<span class="pn-save">Guardar</span></div><div class="pn-t"><b>${esc(titulo(p))}</b><span>${I.dots}</span></div></button>`));
+        list.forEach((p, i) => C[i % cols].push(`<button type="button" class="pn-pin" data-id="${p.id}" title="${esc(titulo(p))}"><div class="pn-img">${media(p)}<span class="pn-ov"></span><span class="pn-save">Guardar</span><span class="pn-dom">↗ yucatalove.com</span><span class="pn-ics"><i>${I.share}</i><i>${I.dots}</i></span></div><div class="pn-t">${chipSt(p)}<span>${I.dots}</span></div></button>`));
         return `<div class="pn-grid">${C.map(c => `<div class="pn-col">${c.join("")}</div>`).join("")}</div>`; })() : vacio}</div>`;
 
   if (plat === "facebook") {
