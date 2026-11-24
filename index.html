@@ -21,7 +21,7 @@
 <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@400;600&family=Nunito+Sans:wght@400;600;700&display=swap" rel="stylesheet">
 <link rel="preload" href="fonts/the-seasons-regular.woff2" as="font" type="font/woff2" crossorigin>
 <link rel="preload" href="fonts/gotham-rounded-light.woff2" as="font" type="font/woff2" crossorigin>
-<link rel="stylesheet" href="styles.css?v=41">
+<link rel="stylesheet" href="styles.css?v=42">
 <link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@1,600&family=Montserrat:wght@500;600&family=Playfair+Display:wght@400&family=Raleway:wght@300;400;700&display=swap">
 </head>
@@ -268,7 +268,7 @@
       <div class="ia-out" id="ia-out" aria-live="polite"></div>
     </div>
     <section class="seo hidden" id="seo-box" aria-label="SEO del blog">
-      <div class="seo-head"><span class="ia-t">🔎 SEO del artículo</span><span class="note">Como en yucatanlove.com · el Copy es el H1 y el Caption es el texto</span></div>
+      <div class="seo-head"><span class="ia-t">🔎 SEO del artículo <button type="button" class="btn ghost small seo-ver" id="seo-ver">👁 Ver como en la web</button></span><span class="note">Como en yucatanlove.com · el Copy es el H1 y el Caption es el texto</span></div>
       <div class="seo-g" id="seo-preview" aria-hidden="true"></div>
       <label>Título SEO <span class="cnt" id="seo-t-c"></span><input id="seo-titulo" maxlength="90" placeholder="Ej. Mayan Wedding Ceremony in Yucatán | Traditions & Guide"></label>
       <label>Meta descripción <span class="cnt" id="seo-d-c"></span><textarea id="seo-desc" rows="2" maxlength="200" placeholder="Explore the Mayan wedding ceremony in Yucatán—its rituals…"></textarea></label>
@@ -302,6 +302,10 @@
     </section>
     <button class="btn ghost small del" id="e-del" type="button">🗑 Eliminar este post</button>
   </div>
+  <section class="ed-prev" id="ed-prev" aria-label="Vista previa del artículo">
+    <div class="ed-prev-bar"><span class="ed-dots"><i></i><i></i><i></i></span><span class="ed-prev-url" id="ed-prev-url"></span><button type="button" class="btn ghost small" id="ed-prev-full">Abrir completo ↗</button></div>
+    <div class="ed-prev-page" id="ed-prev-page"></div>
+  </section>
 </aside>
 
 <div id="blg" class="blg hidden" role="dialog" aria-modal="true" aria-label="Vista del artículo">
@@ -380,7 +384,7 @@
 
 <div id="print-area" aria-hidden="true"></div>
 <script src="lib/supabase.js"></script>
-<script src="config.js?v=41"></script>
-<script src="app.js?v=41"></script>
+<script src="config.js?v=42"></script>
+<script src="app.js?v=42"></script>
 </body>
 </html>

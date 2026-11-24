@@ -824,17 +824,16 @@ function parrafos(txt){ return String(txt || "").split(/\n{2,}/).map(b => b.trim
   if (/^#{2}\s/.test(b)) return `<h2>${esc(b.replace(/^#+\s*/, ""))}</h2>`;
   if (/^#{3}\s/.test(b)) return `<h3>${esc(b.replace(/^#+\s*/, ""))}</h3>`;
   return `<p>${t.replace(/\n/g, "<br>")}</p>`; }).join(""); }
-async function abrirArticulo(p){
-  blgPost = p; const s = p.seo || {}; await signedUrls(slidesOf(p));
+function htmlArticulo(p, conSeo){
+  const s = p.seo || {};
   const d = p.fecha ? new Date(p.fecha + "T12:00:00") : null, mes = d ? d.toLocaleString("en-US", { month: "short" }) : "";
   const h1 = p.copy || (s.titulo || "").split("|")[0].trim() || "Sin título";
   const tags = String(s.tags || "").split(",").map(x => x.trim()).filter(Boolean);
   const rel = posts.filter(x => x.id !== p.id && x.tipo === "Blog").slice(0, 4);
-  $("blg-url").textContent = "yucatanlove.com/" + (s.slug || slugify(h1)) + "/";
-  $("blg-page").innerHTML = `<div class="yl yl-post">
+  return `<div class="yl yl-post">
     <div class="yl-top">search <span></span></div>
     <header class="yl-head"><div class="yl-logo"><img src="icons/logo-color-texto.png" alt="YUC'ATÅLOVE"><span>TOGETHER AS ONE</span></div><nav><span>Home</span><span>Services</span><span>About</span><span>Real Weddings</span><span class="on">Journal</span><span>Media</span><span>Contact</span></nav></header>
-    <div class="ylp-hero">${p.imagen_path ? `<img src="${esc(urlOf(p.imagen_path) || thumbUrl(p.imagen_path))}" alt="${esc(s.alt || "")}">` : `<div class="ylp-noimg">Imagen destacada (1200×558)</div>`}
+    <div class="ylp-hero">${(p._portada || p.imagen_path) ? `<img src="${esc(p._portada || urlOf(p.imagen_path) || thumbUrl(p.imagen_path))}" alt="${esc(s.alt || "")}">` : `<div class="ylp-noimg">Imagen destacada (1200×558)</div>`}
       ${d ? `<div class="ylp-date"><b>${d.getDate()}</b><span>${esc(mes)}</span><span>${d.getFullYear()}</span></div>` : ""}</div>
     <div class="ylp-body">
       <span class="ylp-cat">${esc(s.cat || "Sin categoría")}</span>
@@ -844,10 +843,29 @@ async function abrirArticulo(p){
       <div class="ylp-by">Written by <b>${esc(s.autor || "—")}</b> · Est. reading time <b>${minLectura(p.caption)} minutes</b></div>
       ${rel.length ? `<h3 class="ylp-rel-t">You May Also Like</h3><div class="ylp-rel">${rel.map(r => `<div><div class="yl-img">${r.imagen_path ? `<img src="${esc(thumbUrl(r.imagen_path))}" alt="">` : ""}</div><h4>${esc(r.copy || "Sin título")}</h4></div>`).join("")}</div>` : ""}
     </div>
-    <div class="ylp-seo"><h4>Lo que verá Google y el equipo web</h4>
+    ${conSeo ? `<div class="ylp-seo"><h4>Lo que verá Google y el equipo web</h4>
       ${[["Título SEO", s.titulo], ["Meta descripción", s.desc], ["URL", s.slug ? "https://www.yucatanlove.com/" + s.slug + "/" : ""], ["Palabra clave", s.kw], ["Categoría", s.cat], ["Etiquetas", s.tags], ["Autor", s.autor], ["Alt de la imagen", s.alt], ["H1", h1], ["Texto", p.caption]].map(([l, v]) => `<div class="ylp-f"><span>${l}</span><p>${esc(v ? (l === "Texto" ? String(v).slice(0, 220) + (String(v).length > 220 ? "…" : "") : v) : "— falta —")}</p>${v ? `<button type="button" class="btn ghost small" data-cp="${esc(l)}">Copiar</button>` : ""}</div>`).join("")}
-    </div></div>`;
+    </div>` : ""}</div>`;
+}
+async function abrirArticulo(p){
+  blgPost = p; const s = p.seo || {}; await signedUrls(slidesOf(p));
+  const h1 = p.copy || (s.titulo || "").split("|")[0].trim() || "Sin título";
+  $("blg-url").textContent = "yucatanlove.com/" + (s.slug || slugify(h1)) + "/";
+  $("blg-page").innerHTML = htmlArticulo(p, true);
+  $("blg-edit").classList.toggle("hidden", !!p._borrador);
   $("blg").classList.remove("hidden"); document.body.classList.add("sv-open"); $("blg").scrollTop = 0;
+}
+/* Borrador del editor (lo que se está escribiendo, aunque no esté guardado) */
+function borradorBlog(){
+  if (!current) return null;
+  return Object.assign({}, current, { copy: $("e-copy").value.trim(), caption: $("e-caption").value, fecha: $("e-fecha").value || current.fecha, seo: seoLeer(), _portada: pendingUrl || "", _borrador: true });
+}
+let prevTimer = null;
+function pintarPrevBlog(){
+  clearTimeout(prevTimer);
+  const esBlog = $("e-tipo").value === "Blog"; $("editor").classList.toggle("ed-blog", esBlog);
+  prevTimer = setTimeout(() => { if (!esBlog || !current) return; const b = borradorBlog(); $("ed-prev-page").innerHTML = htmlArticulo(b, false);
+    $("ed-prev-url").textContent = "yucatanlove.com/" + ((b.seo || {}).slug || slugify(b.copy) || "…") + "/"; }, 250);
 }
 function cerrarArticulo(){ $("blg").classList.add("hidden"); document.body.classList.remove("sv-open"); blgPost = null; }
 $("blg-close").addEventListener("click", cerrarArticulo);
@@ -1102,7 +1120,7 @@ function openEditor(p){
   ["fecha","copy","caption","inspo","comentarios","contenido"].forEach(k => { $("e-"+k).value = p[k] || ""; });
   LINK_FIELDS.forEach(k => { $("e-"+k+"-links").innerHTML = chipsLinks(p[k]); });
   pvIdx = 0; renderPreview(); renderSlides(); $("e-rmimg").classList.toggle("hidden", !p.imagen_path); emsg("");
-  cargarHistorial(); iaLimpiar(); seoCargar(p); pintarTomado();
+  cargarHistorial(); iaLimpiar(); seoCargar(p); pintarTomado(); pintarPrevBlog();
   renderUltimo(); renderComentarios(); $("c-text").value = "";
   $("editor").classList.remove("hidden"); $("scrim").classList.remove("hidden");
   if (isMobile()) document.body.style.overflow = "hidden";
@@ -1284,7 +1302,10 @@ function seoPintar(){
   $("seo-chk").innerHTML = checks.map(([ok, t]) => `<li class="${ok ? "ok" : ""}">${ok ? "✓" : "○"} ${esc(t)}</li>`).join("") + `<li class="info">⏱ ${minLectura(body)} min de lectura · ${pals} palabras</li>`;
 }
 ["e-tipo"].forEach(id => $(id).addEventListener("change", () => { seoToggle(); seoPintar(); }));
-["e-copy","e-caption", ...Object.values(SEO_K)].forEach(id => $(id).addEventListener("input", seoPintar));
+["e-copy","e-caption", ...Object.values(SEO_K)].forEach(id => $(id).addEventListener("input", () => { seoPintar(); pintarPrevBlog(); }));
+["e-tipo","e-fecha"].forEach(id => $(id).addEventListener("change", pintarPrevBlog));
+$("seo-ver").addEventListener("click", () => { const b = borradorBlog(); if (b) abrirArticulo(b); });
+$("ed-prev-full").addEventListener("click", () => { const b = borradorBlog(); if (b) abrirArticulo(b); });
 $("seo-slug-auto").addEventListener("click", () => { $("seo-slug").value = slugify($("seo-kw").value && !$("e-copy").value ? $("seo-kw").value : ($("seo-titulo").value || $("e-copy").value).split("|")[0]); editorDirty = true; seoPintar(); });
 
 /* ---------- Asistente de IA (Grok / Claude vía función de Supabase) ---------- */
