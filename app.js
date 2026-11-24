@@ -378,7 +378,7 @@ function tomadoBolita(p, grande){
 function pintarTomado(){ const p = current; $("e-tomado").innerHTML = p && tomadoBolita(p) ? `${tomadoBolita(p)}<span>Lo tomó ${esc(nombreDe(p.tomado_por))}</span>` : ""; }
 function cellHtml(p, c){
   const v = p[c.k];
-  if (c.type === "date") return `<input type="date" data-k="fecha" value="${esc(v || "")}" aria-label="Fecha">`;
+  if (c.type === "date") return `<div class="f-cell"><span class="mover" data-mover title="Mantén presionado y arrastra para cambiar el orden" aria-hidden="true">⠿</span><input type="date" data-k="fecha" value="${esc(v || "")}" aria-label="Fecha"></div>`;
   if (c.type === "list") {
     const col = colorDe(c.list, v);
     const style = col ? `background:${col};color:${textOn(col)}` : "";
@@ -397,6 +397,95 @@ function cellHtml(p, c){
   }
   return "";
 }
+/* ---------- Mover posts arrastrando desde la fecha ----------
+   Las fechas se quedan en su lugar (como casillas del calendario) y los posts cambian de casilla:
+   si mueves el del día 5 arriba del día 1, toma el día 1 y los demás recorren su fecha (y su día, mes y semana). */
+const reordenando = { activo: false, bloquearClick: false };
+function iniciarReorden(){
+  const holdMs = 380;
+  let timer = null, startY = 0, startX = 0, srcEl = null, contenedor = null, items = [], ids = [], from = -1, to = -1, linea = null, autoScroll = null, pointerY = 0;
+  const filas = () => isMobile() ? [...$("cards").querySelectorAll(".pcard[data-open]")] : [...$("tbody").querySelectorAll("tr[data-id]")];
+  const idDe = el => el.dataset.id || el.dataset.open;
+  function cancelarEspera(){ clearTimeout(timer); timer = null; }
+  function comenzar(el){
+    if (!(sortKey === "fecha" && sortDir === 1)) { sortKey = "fecha"; sortDir = 1; renderTable(); saved("Ordené la tabla por fecha. Ahora mantén presionado para mover.", false); return; }
+    const p = posts.find(x => x.id === idDe(el)); if (!p || !p.fecha) { saved("Ese post no tiene fecha. Ponle una para poder moverlo.", true); return; }
+    items = filas(); ids = items.map(idDe); from = to = items.indexOf(el); if (from < 0) return;
+    reordenando.activo = true; srcEl = el; el.classList.add("arrastrando"); document.body.classList.add("reordenando");
+    if (document.activeElement && document.activeElement.blur) document.activeElement.blur();
+    linea = document.createElement("div"); linea.className = "reorden-linea"; document.body.appendChild(linea);
+    if (navigator.vibrate) navigator.vibrate(15);
+    mover(pointerY);
+    autoScroll = setInterval(() => { const m = 70; if (pointerY < m) scrollBy(0, -12); else if (pointerY > innerHeight - m) scrollBy(0, 12); }, 16);
+  }
+  function mover(y){
+    if (!reordenando.activo) return;
+    let idx = items.length;
+    for (let i = 0; i < items.length; i++) { const r = items[i].getBoundingClientRect(); if (y < r.top + r.height / 2) { idx = i; break; } }
+    to = idx > from ? idx - 1 : idx;
+    const ref = items[Math.min(idx, items.length - 1)].getBoundingClientRect(), base = srcEl.closest("table, ul, ol") || srcEl.parentElement, br = base.getBoundingClientRect();
+    const top = idx >= items.length ? ref.bottom : ref.top;
+    Object.assign(linea.style, { top: (top - 2) + "px", left: br.left + "px", width: br.width + "px" });
+  }
+  async function terminar(){
+    clearInterval(autoScroll); if (linea) linea.remove(); linea = null;
+    document.body.classList.remove("reordenando"); if (srcEl) srcEl.classList.remove("arrastrando");
+    const ok = reordenando.activo; reordenando.activo = false;
+    if (!ok || from === to || to < 0) return;
+    reordenando.bloquearClick = true; setTimeout(() => reordenando.bloquearClick = false, 400);
+    const nuevo = ids.slice(); const [id] = nuevo.splice(from, 1); nuevo.splice(to, 0, id);
+    await aplicarOrden(ids, nuevo);
+  }
+  function abajo(e){
+    if (e.button && e.button !== 0) return;
+    const enLista = isMobile() ? e.target.closest("#cards .pcard[data-open]") : e.target.closest("#tbody tr[data-id]");
+    if (!enLista) return;
+    const handle = e.target.closest("[data-mover]"), enFecha = isMobile() ? true : !!e.target.closest(".c-fecha");
+    if (!enFecha) return;
+    pointerY = e.clientY; startY = e.clientY; startX = e.clientX;
+    if (handle && !isMobile()) { e.preventDefault(); comenzar(enLista); return; }
+    timer = setTimeout(() => { timer = null; comenzar(enLista); }, holdMs);
+  }
+  document.addEventListener("pointerdown", abajo);
+  document.addEventListener("pointermove", e => {
+    pointerY = e.clientY;
+    if (timer && (Math.abs(e.clientY - startY) > 8 || Math.abs(e.clientX - startX) > 8)) cancelarEspera();
+    if (reordenando.activo) { e.preventDefault(); mover(e.clientY); }
+  });
+  document.addEventListener("pointerup", () => { cancelarEspera(); terminar(); });
+  document.addEventListener("pointercancel", () => { cancelarEspera(); if (reordenando.activo) terminar(); });
+  document.addEventListener("touchmove", e => { if (reordenando.activo) e.preventDefault(); }, { passive: false });
+  document.addEventListener("contextmenu", e => { if (reordenando.activo || timer) e.preventDefault(); });
+}
+async function aplicarOrden(antes, despues){
+  const byId = id => posts.find(p => p.id === id);
+  // Solo los posts con fecha participan; sus casillas (fecha, día, mes, semana) se conservan en el mismo orden
+  const conFecha = antes.filter(id => byId(id) && byId(id).fecha);
+  const slots = conFecha.map(id => { const p = byId(id); return { fecha: p.fecha, dia: p.dia, mes: p.mes, semana: p.semana }; });
+  const orden = despues.filter(id => conFecha.includes(id));
+  const previos = {}, cambios = [];
+  orden.forEach((id, i) => { const p = byId(id), s = slots[i];
+    if (p.fecha !== s.fecha) { previos[id] = { fecha: p.fecha, dia: p.dia, mes: p.mes, semana: p.semana };
+      cambios.push([id, { fecha: s.fecha, dia: diaDe(s.fecha) || s.dia, mes: mesDe(s.fecha) || s.mes, semana: s.semana || null }]); } });
+  if (!cambios.length) return;
+  await guardarCambiosFecha(cambios, previos, true);
+}
+async function guardarCambiosFecha(cambios, previos, conDeshacer){
+  cambios.forEach(([id, patch]) => { const p = posts.find(x => x.id === id); if (p) Object.assign(p, patch); });
+  renderBody(); saved("Moviendo…");
+  const res = await Promise.all(cambios.map(([id, patch]) => sb.from("posts").update(patch).eq("id", id)));
+  const err = res.find(r => r.error);
+  if (err) { saved(errMsg(err.error), true); return; }
+  saved(`${cambios.length === 1 ? "1 post cambió" : cambios.length + " posts cambiaron"} de fecha.`);
+  if (conDeshacer) avisoDeshacer(`Orden cambiado: ${cambios.length} ${cambios.length === 1 ? "fecha ajustada" : "fechas ajustadas"}.`, () => guardarCambiosFecha(Object.entries(previos).map(([id, p]) => [id, p]), null, false));
+}
+function avisoDeshacer(texto, fn){
+  let t = $("toast"); if (!t) { t = document.createElement("div"); t.id = "toast"; t.className = "toast"; document.body.appendChild(t); }
+  t.innerHTML = `<span>${esc(texto)}</span><button type="button" class="btn small">Deshacer</button>`;
+  t.classList.add("on"); clearTimeout(t._h); t._h = setTimeout(() => t.classList.remove("on"), 7000);
+  t.querySelector("button").onclick = () => { t.classList.remove("on"); fn(); };
+}
+iniciarReorden();
 function renderBody(){
   const rows = sortedRows();
   $("count").textContent = `${rows.length} de ${posts.length} posts`;
@@ -419,7 +508,7 @@ function renderBody(){
     : `<tr><td colspan="${COLS.length + 1}" style="padding:28px;text-align:center;color:var(--chocolate)">${emptyMsg}</td></tr>`;
 }
 $("cards").addEventListener("keydown", e => { if ((e.key === "Enter" || e.key === " ") && e.target.matches(".pcard")) { e.preventDefault(); e.target.click(); } });
-$("cards").addEventListener("click", e => { if (e.target.closest("a")) return; const b = e.target.closest("[data-open]"); if (!b) return; const p = posts.find(x => x.id === b.dataset.open); if (p) openEditor(p); });
+$("cards").addEventListener("click", e => { if (reordenando.bloquearClick) { reordenando.bloquearClick = false; return; } if (e.target.closest("a")) return; const b = e.target.closest("[data-open]"); if (!b) return; const p = posts.find(x => x.id === b.dataset.open); if (p) openEditor(p); });
 $("tbody").addEventListener("change", e => {
   const el = e.target, tr = el.closest("tr"); if (!tr || !el.dataset.k) return;
   const id = tr.dataset.id, k = el.dataset.k, v = el.value || null;
