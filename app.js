@@ -365,13 +365,25 @@ function sortedRows(){
   return rows;
 }
 function renderTable(){ if (isMobile()) renderMobileFilters(); else renderHead(); renderBody(); }
+/* ---------- Quién tomó cada post: al sacarlo de "Pendiente" queda su bolita con iniciales ---------- */
+const iniciales = n => String(n || "").trim().split(/\s+/).filter(Boolean).slice(0, 2).map(w => w[0]).join("").toUpperCase() || "?";
+const BOLITA_COL = ["#AB391B","#674E4A","#303030","#8C5A3C","#7A2A14","#5C4A46"];
+function colorPersona(email){ let h = 0; for (const ch of String(email || "")) h = (h * 31 + ch.charCodeAt(0)) % 9973; return BOLITA_COL[h % BOLITA_COL.length]; }
+function tomadoBolita(p, grande){
+  if (!p.tomado_por || !p.status || p.status === "Pendiente") return "";
+  const n = nombreDe(p.tomado_por), c = colorPersona(p.tomado_por);
+  const t = `Lo tomó ${n}${p.tomado_at ? " · " + cuando(p.tomado_at) : ""}`;
+  return `<span class="bolita${grande ? " g" : ""}" style="background:${c};color:${textOn(c)}" title="${esc(t)}" aria-label="${esc(t)}">${esc(iniciales(n))}</span>`;
+}
+function pintarTomado(){ const p = current; $("e-tomado").innerHTML = p && tomadoBolita(p) ? `${tomadoBolita(p)}<span>Lo tomó ${esc(nombreDe(p.tomado_por))}</span>` : ""; }
 function cellHtml(p, c){
   const v = p[c.k];
   if (c.type === "date") return `<input type="date" data-k="fecha" value="${esc(v || "")}" aria-label="Fecha">`;
   if (c.type === "list") {
     const col = colorDe(c.list, v);
     const style = col ? `background:${col};color:${textOn(col)}` : "";
-    return `<select data-k="${c.k}" class="${v && col ? "chip-sel" : ""}" style="${style}" aria-label="${esc(c.label)}">${optionsHtml(c.list, v, true)}</select>`;
+    const sel = `<select data-k="${c.k}" class="${v && col ? "chip-sel" : ""}" style="${style}" aria-label="${esc(c.label)}">${optionsHtml(c.list, v, true)}</select>`;
+    return c.k === "status" ? `<div class="st-cell">${sel}${tomadoBolita(p)}</div>` : sel;
   }
   if (c.type === "thumb") { const u = thumbUrl(v); return v && u ? `<button class="icon-btn" data-img="${p.id}" title="Ver o cambiar imagen"><img class="thumb" src="${esc(u)}" alt="" loading="lazy" decoding="async"></button>` : `<button class="icon-btn" data-img="${p.id}" title="Subir imagen" aria-label="Subir imagen">＋</button>`; }
   if (c.type === "long" && LINK_FIELDS.includes(c.k) && linksDe(v).length) {
@@ -398,7 +410,7 @@ function renderBody(){
           <span class="pdate">${esc(p.dia ? p.dia + " · " : "")}${fmtCorto(p.fecha)}${p.semana ? " · " + esc(p.semana) : ""}</span>
           <span class="pcopy${p.copy ? "" : " empty"}">${esc(p.copy || "Sin copy")}</span>
           ${(linksDe(p.contenido).length || linksDe(p.inspo).length) ? `<span class="lnks">${chipsLinks(p.contenido)}${chipsLinks(p.inspo)}</span>` : ""}
-          <span class="pchips">${chip("tipo", p.tipo)}${chip("pilar", p.pilar)}${chip("status", p.status)}${chip("cumplio", p.cumplio)}${nComent(p.id) ? `<span class="cbadge">💬 ${nComent(p.id)}</span>` : ""}</span>
+          <span class="pchips">${chip("tipo", p.tipo)}${chip("pilar", p.pilar)}${chip("status", p.status)}${tomadoBolita(p)}${chip("cumplio", p.cumplio)}${nComent(p.id) ? `<span class="cbadge">💬 ${nComent(p.id)}</span>` : ""}</span>
         </span></div></li>`;
     }).join("") : `<li class="empty-state">${emptyMsg}</li>`;
     return;
@@ -428,9 +440,9 @@ $("tbody").addEventListener("click", e => {
 async function savePatch(id, patch, rerender){
   const p = posts.find(x => x.id === id); if (p) Object.assign(p, patch);
   saved("Guardando…");
-  const { error } = await sb.from("posts").update(patch).eq("id", id);
-  if (error) saved(errMsg(error), true); else saved("Guardado");
-  if (rerender) renderBody();
+  const { data, error } = await sb.from("posts").update(patch).eq("id", id).select("tomado_por,tomado_at,updated_at,updated_by");
+  if (error) saved(errMsg(error), true); else { saved("Guardado"); const r = Array.isArray(data) ? data[0] : data; if (p && r) Object.assign(p, r); }
+  if (rerender || "status" in patch) renderBody();
 }
 function editLong(p, k){
   const c = COLS.find(x => x.k === k), d = $("dlg");
@@ -988,7 +1000,7 @@ function openEditor(p){
   ["fecha","copy","caption","inspo","comentarios","contenido"].forEach(k => { $("e-"+k).value = p[k] || ""; });
   LINK_FIELDS.forEach(k => { $("e-"+k+"-links").innerHTML = chipsLinks(p[k]); });
   pvIdx = 0; renderPreview(); renderSlides(); $("e-rmimg").classList.toggle("hidden", !p.imagen_path); emsg("");
-  cargarHistorial(); iaLimpiar(); seoCargar(p);
+  cargarHistorial(); iaLimpiar(); seoCargar(p); pintarTomado();
   renderUltimo(); renderComentarios(); $("c-text").value = "";
   $("editor").classList.remove("hidden"); $("scrim").classList.remove("hidden");
   if (isMobile()) document.body.style.overflow = "hidden";
@@ -1047,14 +1059,15 @@ $("e-save").addEventListener("click", async () => {
     const old = current.imagen_path;
     if (pendingFile) patch.imagen_path = await uploadImage(pendingFile, current.id);
     emsg("Guardando…");
-    const { error } = await sb.from("posts").update(patch).eq("id", current.id);
+    const { data: fila, error } = await sb.from("posts").update(patch).eq("id", current.id).select("tomado_por,tomado_at");
     if (error) throw error;
+    const fr = Array.isArray(fila) ? fila[0] : fila; if (fr) Object.assign(patch, fr);
     if (patch.imagen_path) { await signedUrls(allImagePaths([{ imagen_path: patch.imagen_path }])); if (old) sb.storage.from(CFG.bucket).remove([old, thumbOf(old)]); }
     Object.assign(current, patch); const i = posts.findIndex(p => p.id === current.id); if (i >= 0) posts[i] = current;
     pendingFile = null; editorDirty = false; emsg("Guardado."); current.updated_by = user.email; current.updated_at = new Date().toISOString(); renderUltimo();
     $("e-title").textContent = current.fecha ? `Post del ${fmtCorto(current.fecha)}` : "Post nuevo";
     pvIdx = 0; renderPreview(); renderSlides(); $("e-rmimg").classList.toggle("hidden", !current.imagen_path);
-    renderAll(); cargarHistorial();
+    renderAll(); cargarHistorial(); pintarTomado();
   } catch (err) { emsg(errMsg(err), true); }
   finally { btn.disabled = false; }
 });
