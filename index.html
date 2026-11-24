@@ -21,7 +21,7 @@
 <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@400;600&family=Nunito+Sans:wght@400;600;700&display=swap" rel="stylesheet">
 <link rel="preload" href="fonts/the-seasons-regular.woff2" as="font" type="font/woff2" crossorigin>
 <link rel="preload" href="fonts/gotham-rounded-light.woff2" as="font" type="font/woff2" crossorigin>
-<link rel="stylesheet" href="styles.css?v=27">
+<link rel="stylesheet" href="styles.css?v=28">
 </head>
 <body>
 <!-- Pantalla de carga: se ve hasta que la app decide si mostrar la entrada o la parrilla -->
@@ -75,6 +75,7 @@
     <div class="who"><span id="who-email"></span><button class="link" id="btn-logout" type="button">Salir</button></div>
   </header>
   <p class="banner hidden" id="banner" role="alert"></p>
+  <div class="plat-menu hidden" id="plat-menu" role="menu" aria-label="Elegir plataforma"></div>
   <p class="banner offline hidden" id="offline" role="status">Sin conexión. Los cambios no se guardarán hasta que vuelva el internet.</p>
 
   <!-- PARRILLA -->
@@ -107,8 +108,9 @@
         <div class="avatar" aria-hidden="true"><img src="icons/simbolo-arena.png" alt=""></div>
         <div>
           <h2 class="prof-name"><img src="icons/logo-color-texto.png" alt="YUC'ATÅLOVE" width="1000" height="106"></h2>
-          <p class="note">Destination weddings in Yucatán · Together as one</p>
-          <div class="stats"><span><b id="st-feed">0</b> en el feed</span><span><b id="st-img">0</b> con imagen</span><span><b id="st-story">0</b> historias</span></div>
+          <p class="note" id="prof-bio">Destination weddings in Yucatán · Together as one</p>
+          <button type="button" class="plat-btn" id="plat-btn" aria-haspopup="menu" aria-expanded="false"><span id="plat-name">Instagram</span> ▾</button>
+          <div class="stats" id="ig-stats"><span><b id="st-feed">0</b> en el feed</span><span><b id="st-img">0</b> con imagen</span><span><b id="st-story">0</b> historias</span></div>
         </div>
       </div>
       <div class="toolbar">
@@ -118,6 +120,7 @@
         </div>
         <div class="right"><button class="btn ghost small" id="btn-sort" type="button">Ordenar por fecha</button></div>
       </div>
+      <div id="ig-view">
       <section id="stories-wrap" aria-label="Historias">
         <div class="label-sm">Historias (no aparecen en la cuadrícula)</div>
         <div class="stories" id="stories"></div>
@@ -125,6 +128,8 @@
       <section class="feed-grid" id="feed-grid" aria-label="Cuadrícula del feed"></section>
       <p class="note" id="st-otras"></p>
       <p class="note">Toca un post para verlo como se publicará y copiar el caption o guardar sus imágenes. <span class="desk-only">Arrastra un cuadro sobre otro para cambiarlos de lugar. </span>Los posts se crean y editan en la Parrilla.</p>
+      </div>
+      <section id="plat-view" class="plat-view hidden" aria-live="polite"></section>
     </div>
   </main>
 
@@ -328,7 +333,7 @@
 
 <div id="print-area" aria-hidden="true"></div>
 <script src="lib/supabase.js"></script>
-<script src="config.js?v=27"></script>
-<script src="app.js?v=27"></script>
+<script src="config.js?v=28"></script>
+<script src="app.js?v=28"></script>
 </body>
 </html>

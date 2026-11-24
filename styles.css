@@ -474,3 +474,59 @@ body.sv-open{overflow:hidden}
 .ia-cargando{animation:iaPulse 1.2s ease-in-out infinite}
 @keyframes iaPulse{50%{opacity:.45}}
 @media (max-width:760px){#ia-extra{font-size:16px}}
+
+/* Selector de plataforma del Feed */
+.plat-btn{display:inline-flex;align-items:center;gap:4px;margin:6px 0 4px;background:var(--marfil);border:1px solid var(--rosa);color:var(--terracota);border-radius:16px;padding:4px 12px;font:inherit;font-size:13px;cursor:pointer}
+.plat-menu{position:fixed;z-index:95;background:var(--arena);border:1px solid var(--rosa);border-radius:12px;box-shadow:0 10px 30px rgba(0,0,0,.18);padding:6px;min-width:220px;display:flex;flex-direction:column}
+.plat-menu.hidden{display:none}
+.plat-menu button{display:flex;align-items:center;gap:10px;background:none;border:0;padding:10px 10px;border-radius:8px;font:inherit;font-size:15px;color:var(--gris);cursor:pointer;text-align:left}
+.plat-menu button:hover,.plat-menu button:focus-visible{background:var(--marfil);outline:none}
+.plat-menu button.on{background:var(--marfil);color:var(--terracota)}
+.pm-ic{width:22px;height:22px;display:grid;place-items:center;color:var(--chocolate)}
+.plat-menu .on .pm-ic{color:var(--terracota)}
+.pm-ic svg{width:20px;height:20px;fill:none;stroke:currentColor;stroke-width:1.6;stroke-linecap:round;stroke-linejoin:round}
+.pm-n{flex:1}.pm-c{font-size:12px;color:var(--taupe);background:var(--marfil);border-radius:9px;padding:0 7px}
+.plat-view.hidden,#ig-view.hidden,#ig-stats.hidden,#btn-sort.hidden{display:none}
+.plat-view{margin-top:12px}
+.plat-view button{font:inherit;color:inherit;text-align:left;cursor:pointer}
+.plat-view .ph{height:100%;display:grid;place-content:center;gap:6px;text-align:center;padding:12px;background:var(--marfil);color:var(--chocolate)}
+.plat-view .ph .t{font-size:13px}.plat-view .ph .u{font-size:11px;color:var(--terracota)}
+.plat-view .meta{display:flex;gap:4px;flex-wrap:wrap}
+/* TikTok */
+.tt-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:3px}
+.tt-tile{position:relative;aspect-ratio:3/4;border:0;padding:0;background:#303030;overflow:hidden}
+.tt-tile img{width:100%;height:100%;object-fit:cover;display:block}
+.tt-play{position:absolute;left:8px;bottom:8px;color:#fff;font-size:12px;text-shadow:0 1px 3px rgba(0,0,0,.6)}
+.tt-tile .meta{position:absolute;top:6px;left:6px;right:6px}
+/* Pinterest */
+.pin-grid{columns:2;column-gap:12px}
+@media (min-width:900px){.pin-grid{columns:4}}
+.pin{display:inline-block;width:100%;margin:0 0 14px;border:0;background:none;padding:0;break-inside:avoid}
+.pin-img{border-radius:16px;overflow:hidden;background:var(--marfil)}
+.pin-img img{width:100%;display:block}
+.pin-img .ph{aspect-ratio:2/3}
+.pin b{display:block;font-weight:400;font-size:14px;margin:6px 4px 4px;line-height:1.3}
+.pin .meta{margin:0 4px}
+/* Facebook y Pauta */
+.fb-list{display:flex;flex-direction:column;gap:14px;max-width:560px;margin:0 auto}
+.fb-card{border:1px solid var(--rosa);border-radius:10px;background:#fff;padding:0;overflow:hidden;display:block;width:100%}
+.fb-h{display:flex;align-items:center;gap:8px;padding:10px 12px 6px}
+.fb-h div{display:flex;flex-direction:column;font-size:14px;line-height:1.2}.fb-h div span{font-size:12px;color:var(--taupe)}
+.fb-cap{margin:0;padding:2px 12px 10px;font-size:14px;white-space:pre-wrap;display:-webkit-box;-webkit-line-clamp:4;-webkit-box-orient:vertical;overflow:hidden}
+.fb-img{position:relative;background:var(--marfil)}
+.fb-img img{width:100%;display:block;max-height:640px;object-fit:cover}
+.fb-img .ph{aspect-ratio:4/5}
+.fb-acts{display:flex;justify-content:space-around;border-top:1px solid #eee;padding:8px 0;font-size:13px;color:var(--taupe)}
+.ad-cta{display:flex;justify-content:space-between;align-items:center;gap:8px;padding:10px 12px;background:var(--marfil);font-size:13px;color:var(--chocolate)}
+.ad-cta .btn{pointer-events:none}
+.fb-card .meta{padding:8px 12px}
+/* Blog */
+.blog-list{display:grid;gap:16px;grid-template-columns:repeat(auto-fill,minmax(280px,1fr))}
+.blog-card{border:1px solid var(--rosa);border-radius:10px;background:#fff;padding:0;overflow:hidden;display:flex;flex-direction:column}
+.blog-img{aspect-ratio:16/9;background:var(--marfil);overflow:hidden}
+.blog-img img{width:100%;height:100%;object-fit:cover;display:block}
+.blog-body{padding:12px 14px 14px;display:flex;flex-direction:column;gap:6px}
+.blog-body h3{margin:0;font-family:var(--display,serif);font-weight:400;font-size:20px;line-height:1.2;color:var(--gris)}
+.blog-body p{margin:0;font-size:14px;color:var(--chocolate);line-height:1.45}
+.pin-img img{aspect-ratio:2/3;object-fit:cover}
+.fb-img img{aspect-ratio:4/5;height:auto}

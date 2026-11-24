@@ -279,7 +279,11 @@ function setView(v){
   if (location.hash !== "#"+v) history.replaceState(null, "", "#"+v);
   renderAll(); window.scrollTo(0, 0);
 }
-document.querySelectorAll(".tabs button").forEach(b => b.addEventListener("click", () => setView(b.dataset.view)));
+document.querySelectorAll(".tabs button").forEach(b => b.addEventListener("click", () => {
+  // Estando en Feed, tocar Feed otra vez abre el menú de plataformas
+  if (b.dataset.view === "feed" && view === "feed") { abrirMenuPlat(b); return; }
+  setView(b.dataset.view);
+}));
 window.addEventListener("hashchange", () => setView(location.hash.replace("#","")));
 
 function renderAll(fromRemote){
@@ -477,7 +481,81 @@ function feedList(){ return feedListTodo().filter(p => !esInterno(p)); }
 const FUERA_DEL_FEED = ["Historia", "Pin", "TikTok", "Video YT", "Blog"];
 const enFeed = p => !FUERA_DEL_FEED.includes(p.tipo);
 const feedOrder = list => list.filter(enFeed).sort((a, b) => (a.orden ?? 0) - (b.orden ?? 0) || String(b.fecha || "").localeCompare(String(a.fecha || "")));
+/* ---------- Plataformas del Feed (Instagram, TikTok, Pinterest, Facebook, Pauta, Blog) ---------- */
+const PLATS = {
+  instagram: { n: "Instagram", bio: "Destination weddings in Yucatán · Together as one", filtro: null },
+  tiktok:    { n: "TikTok", bio: "Videos de TikTok del mes", filtro: p => p.tipo === "TikTok", vacio: "No hay TikToks para este filtro. En la Parrilla, ponles tipo “TikTok”." },
+  pinterest: { n: "Pinterest", bio: "Pines del mes", filtro: p => p.tipo === "Pin", vacio: "No hay pines para este filtro. En la Parrilla, ponles tipo “Pin”." },
+  facebook:  { n: "Facebook", bio: "Así se verán en Facebook los posts del feed de Instagram", filtro: p => !FUERA_DEL_FEED.includes(p.tipo) && !esPauta(p), vacio: "No hay posts del feed para este filtro." },
+  pauta:     { n: "Pauta", bio: "Anuncios del mes (pilar “Pauta”)", filtro: p => esPauta(p), vacio: "No hay pauta para este filtro. En la Parrilla, usa el pilar “Pauta”." },
+  blog:      { n: "Blog", bio: "Artículos del blog", filtro: p => p.tipo === "Blog", vacio: "No hay artículos para este filtro. En la Parrilla, ponles tipo “Blog”." },
+};
+const esPauta = p => String(p.pilar || "").trim().toLowerCase() === "pauta";
+let plat = "instagram"; try { plat = sessionStorage.getItem("plat") || "instagram"; } catch (_) {}
+if (!PLATS[plat]) plat = "instagram";
+function abrirMenuPlat(anchor){
+  const m = $("plat-menu"), base = feedListTodo().filter(p => !esInterno(p));
+  m.innerHTML = Object.entries(PLATS).map(([k, v]) => {
+    const n = k === "instagram" ? feedOrder(base).length : base.filter(v.filtro).length;
+    return `<button type="button" role="menuitemradio" aria-checked="${k === plat}" data-plat="${k}" class="${k === plat ? "on" : ""}"><span class="pm-ic pm-${k}">${PLAT_IC[k]}</span><span class="pm-n">${v.n}</span><span class="pm-c">${n}</span></button>`;
+  }).join("");
+  m.classList.remove("hidden");
+  const r = anchor.getBoundingClientRect(), mw = m.offsetWidth, mh = m.offsetHeight;
+  let left = Math.min(Math.max(8, r.left + r.width / 2 - mw / 2), innerWidth - mw - 8);
+  let top = r.bottom + 6; if (top + mh > innerHeight - 8) top = Math.max(8, r.top - mh - 6);
+  m.style.left = left + "px"; m.style.top = top + "px";
+  $("plat-btn").setAttribute("aria-expanded", "true");
+  const f = m.querySelector(".on") || m.querySelector("button"); f && f.focus();
+}
+function cerrarMenuPlat(){ $("plat-menu").classList.add("hidden"); $("plat-btn").setAttribute("aria-expanded", "false"); }
+const PLAT_IC = {
+  instagram: '<svg viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="18" rx="5"/><circle cx="12" cy="12" r="4"/><circle cx="17.5" cy="6.5" r="1" fill="currentColor"/></svg>',
+  tiktok: '<svg viewBox="0 0 24 24"><path d="M14 3v11.5a3.5 3.5 0 1 1-3.5-3.5"/><path d="M14 3c.5 2.6 2.4 4.4 5 4.6"/></svg>',
+  pinterest: '<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M11 8.5c3-1.2 5.5.6 4.6 3.4-.6 2-2.6 2.6-3.8 1.4M11.6 10l-2 9"/></svg>',
+  facebook: '<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M13.5 21v-7.5h2.5M13.5 21v-9.5c0-1.4.8-2.5 2.5-2.5h1M11 13.5h2.5"/></svg>',
+  pauta: '<svg viewBox="0 0 24 24"><path d="M4 10v4h3l6 4V6L7 10H4z"/><path d="M16.5 9a4 4 0 0 1 0 6"/></svg>',
+  blog: '<svg viewBox="0 0 24 24"><path d="M6 3h9l4 4v14H6z"/><path d="M9 11h7M9 15h7M9 7h4"/></svg>',
+};
+$("plat-btn").addEventListener("click", e => { e.stopPropagation(); $("plat-menu").classList.contains("hidden") ? abrirMenuPlat($("plat-btn")) : cerrarMenuPlat(); });
+$("plat-menu").addEventListener("click", e => {
+  const b = e.target.closest("[data-plat]"); if (!b) return;
+  plat = b.dataset.plat; try { sessionStorage.setItem("plat", plat); } catch (_) {}
+  cerrarMenuPlat(); renderFeed(); window.scrollTo(0, 0);
+});
+document.addEventListener("click", e => { if (!$("plat-menu").classList.contains("hidden") && !e.target.closest("#plat-menu, #plat-btn, #tab-feed")) cerrarMenuPlat(); });
+document.addEventListener("keydown", e => { if (e.key === "Escape" && !$("plat-menu").classList.contains("hidden")) cerrarMenuPlat(); });
+window.addEventListener("resize", cerrarMenuPlat);
+
+function renderPlataforma(){
+  const P = PLATS[plat], list = feedList().filter(P.filtro).sort((a, b) => String(a.fecha || "9999").localeCompare(String(b.fecha || "9999")));
+  const v = $("plat-view"); v.className = "plat-view pv-" + plat;
+  if (!list.length) { v.innerHTML = `<div class="empty-state">${esc(P.vacio)}</div>`; return; }
+  const img = p => thumbUrl(p.imagen_path);
+  const chipSt = p => { const st = p.status || ""; if (!st) return ""; const sc = colorDe("status", st) || "#F6F6F4"; return `<span class="chip" style="background:${sc};color:${textOn(sc)}">${esc(st)}</span>`; };
+  const ph = p => `<div class="ph"><div class="label-sm">${esc(p.pilar || "")}</div><div class="t">${esc(p.copy || p.tipo || "Post")}</div><div class="u">Sin imagen</div></div>`;
+  const titulo = p => p.copy || String(p.caption || "").split("\n")[0] || "Sin título";
+  const fbHead = (extra) => `<div class="fb-h"><span class="sv-av"><img src="icons/simbolo-arena.png" alt=""></span><div><b>YUC'ATÅLOVE</b><span>${extra}</span></div></div>`;
+  let html = "";
+  if (plat === "tiktok") html = `<div class="tt-grid">${list.map(p => `<button type="button" class="tt-tile" data-id="${p.id}">${img(p) ? `<img src="${esc(img(p))}" alt="" loading="lazy">` : ph(p)}<span class="tt-play">▶</span><div class="meta"><span class="chip date">${fmtCorto(p.fecha)}</span>${chipSt(p)}</div></button>`).join("")}</div>`;
+  if (plat === "pinterest") html = `<div class="pin-grid">${list.map(p => `<button type="button" class="pin" data-id="${p.id}"><div class="pin-img">${img(p) ? `<img src="${esc(img(p))}" alt="" loading="lazy">` : ph(p)}</div><b>${esc(titulo(p))}</b><div class="meta"><span class="chip date">${fmtCorto(p.fecha)}</span>${chipSt(p)}</div></button>`).join("")}</div>`;
+  if (plat === "facebook" || plat === "pauta") html = `<div class="fb-list">${list.map(p => {
+      const n = slidesOf(p).length;
+      return `<button type="button" class="fb-card" data-id="${p.id}">${fbHead(plat === "pauta" ? "Publicidad" : (fmtCorto(p.fecha) || "sin fecha") + " · 🌐")}
+        <p class="fb-cap">${esc(p.caption || p.copy || "Sin caption")}</p>
+        <div class="fb-img">${img(p) ? `<img src="${esc(img(p))}" alt="" loading="lazy">` : ph(p)}${n > 1 ? `<span class="tile-n">1/${n}</span>` : ""}</div>
+        ${plat === "pauta" ? `<div class="ad-cta"><span>yucatalove.com</span><span class="btn small">Más información</span></div>` : `<div class="fb-acts"><span>👍 Me gusta</span><span>💬 Comentar</span><span>↗ Compartir</span></div>`}
+        <div class="meta">${plat === "pauta" ? `<span class="chip date">${fmtCorto(p.fecha) || "sin fecha"}</span>` : ""}${chipSt(p)}<span class="chip date">${esc(p.tipo || "")}</span></div></button>`; }).join("")}</div>`;
+  if (plat === "blog") html = `<div class="blog-list">${list.map(p => `<button type="button" class="blog-card" data-id="${p.id}"><div class="blog-img">${img(p) ? `<img src="${esc(img(p))}" alt="" loading="lazy">` : ph(p)}</div><div class="blog-body"><span class="label-sm">${esc(p.pilar || "Blog")} · ${fmtCorto(p.fecha) || "sin fecha"}</span><h3>${esc(titulo(p))}</h3><p>${esc(String(p.caption || "").slice(0, 180))}${String(p.caption || "").length > 180 ? "…" : ""}</p><div class="meta">${chipSt(p)}</div></div></button>`).join("")}</div>`;
+  v.innerHTML = html;
+}
+$("plat-view").addEventListener("click", e => { const t = e.target.closest("[data-id]"); if (!t) return; const p = posts.find(x => x.id === t.dataset.id); if (p) abrirPublicar(p); });
+
 function renderFeed(){
+  const P = PLATS[plat], esIG = plat === "instagram";
+  $("plat-name").textContent = P.n; $("prof-bio").textContent = P.bio;
+  $("ig-view").classList.toggle("hidden", !esIG); $("ig-stats").classList.toggle("hidden", !esIG); $("btn-sort").classList.toggle("hidden", !esIG);
+  $("plat-view").classList.toggle("hidden", esIG);
+  if (!esIG) { renderPlataforma(); return; }
   const list = feedList();
   const feed = feedOrder(list);
   const st = list.filter(p => p.tipo === "Historia").sort((a, b) => String(a.fecha || "").localeCompare(String(b.fecha || "")));
