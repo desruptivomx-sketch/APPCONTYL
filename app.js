@@ -285,7 +285,15 @@ function subscribe(){
   channel = sb.channel("parrilla")
     .on("postgres_changes", { event: "*", schema: "public", table: "posts" }, async payload => {
       if (payload.eventType === "DELETE") posts = posts.filter(p => p.id !== payload.old.id);
-      else { const n = payload.new; const i = posts.findIndex(p => p.id === n.id); if (i >= 0) posts[i] = n; else posts.push(n); if (slidesOf(n).length) await signedUrls(allImagePaths([n])); }
+      else {
+        // El aviso de un cambio no trae los textos largos que no se tocaron (el artículo de un blog, por ejemplo):
+        // se conserva lo que ya se tenía y encima se pone lo que sí llegó; si el post no estaba aquí, se pide completo.
+        let n = payload.new; const i = posts.findIndex(p => p.id === n.id);
+        if (i >= 0) n = Object.assign({}, posts[i], n);
+        else if (payload.eventType === "UPDATE") { try { const { data: fila } = await sb.from("posts").select("*").eq("id", n.id).maybeSingle(); if (fila) n = fila; } catch (_) {} }
+        const j = posts.findIndex(p => p.id === n.id); if (j >= 0) posts[j] = n; else posts.push(n);
+        if (slidesOf(n).length) await signedUrls(allImagePaths([n]));
+      }
       if (current && !editorDirty) { const c = posts.find(p => p.id === current.id); if (c) current = c; }
       if (cdPost && !posts.find(p => p.id === cdPost.id)) $("cdlg").close();
       renderAll(true);
@@ -614,7 +622,7 @@ function confirmDelete(p){
     if (d.returnValue !== "ok") return;
     const { error } = await sb.from("posts").delete().eq("id", p.id);
     if (error) { saved(errMsg(error), true); return; }
-    const imgs = slidesOf(p); if (imgs.length) sb.storage.from(CFG.bucket).remove(imgs.flatMap(x => [x, thumbOf(x)]));
+    const imgs = [...slidesOf(p), ...blImgs(p.cuerpo)]; if (imgs.length) sb.storage.from(CFG.bucket).remove(imgs.flatMap(x => [x, thumbOf(x)]));
     posts = posts.filter(x => x.id !== p.id); if (current && current.id === p.id) closeEditor(true); renderAll(); saved("Post eliminado");
   };
   d.returnValue = ""; d.showModal();
@@ -884,13 +892,432 @@ function renderFeed(){
 }
 $("feed-grid").addEventListener("click", e => { const t = e.target.closest(".tile"); if (!t) return; const p = posts.find(x => x.id === t.dataset.id); if (p) abrirPublicar(p); });
 
+/* ---------- Editor del artículo de Blog ----------
+   El artículo se escribe sobre la página, como se verá en la web, con una barra para dar formato.
+   Se guarda por bloques en posts.cuerpo:
+     p (párrafo) · h (título 1–4) · img (una imagen o hasta 3 en fila) · ul / ol (listas) · cita · btn (botón) · hr (línea)
+   Dentro de un bloque el texto solo admite negritas, cursivas, enlaces y saltos de línea. Todo lo demás se limpia
+   al leerlo y también al pintarlo: lo pegado desde Docs o Word entra limpio y nada guardado se muestra sin limpiar. */
+const blDoc = $("bl-doc"), blTools = $("bl-tools"), blCtx = $("bl-ctx");
+const BL_ANCHO = window.matchMedia("(min-width:900px)");
+const BL_URL_OK = /^(https?:\/\/|mailto:|tel:)/i;
+const BL_BLOQUE = "p,div,h1,h2,h3,h4,h5,h6,ul,ol,blockquote,hr,figure,table,[data-b]";
+const BL_W = { g: 1, m: 1, ch: 1 };
+const BL_INERTE = document.implementation.createHTMLDocument("");   // para manipular HTML ajeno sin que nada cargue ni se ejecute
+let blIsla = null, blRango = null, blSubiendo = 0, blDestino = null, blT = 0;
+try { document.execCommand("defaultParagraphSeparator", false, "p"); document.execCommand("styleWithCSS", false, false); } catch (_) {}
+const esBlogEd = () => $("e-tipo").value === "Blog";
+const blUrl = h => { h = String(h || "").trim(); return !h ? "" : BL_URL_OK.test(h) ? h : /^[\w-]+(\.[\w-]+)+(\/|$|\?|#)/.test(h) ? "https://" + h : ""; };
+
+// ---- Texto dentro de un bloque: de cualquier HTML a solo <strong> <em> <a href> <br>
+function blInline(n){
+  let out = "";
+  n.childNodes.forEach(c => {
+    if (c.nodeType === 3) { out += esc(c.nodeValue.replace(/ /g, " ")); return; }
+    if (c.nodeType !== 1) return;
+    const tag = c.tagName;
+    if (tag === "BR") { out += "<br>"; return; }
+    if ((c.dataset && c.dataset.b) || /^(SCRIPT|STYLE|TITLE|META|LINK|HEAD|IMG|HR|FIGURE|SVG|IFRAME|OBJECT|TEMPLATE|BUTTON|INPUT|SELECT|TEXTAREA)$/.test(tag)) return;
+    let inner = blInline(c); if (!inner) return;
+    const st = c.getAttribute("style") || "";
+    const negr = /^(B|STRONG)$/.test(tag) ? !/font-weight:\s*(normal|[1-4]00)/i.test(st) : /font-weight:\s*(bold|[6-9]00)/i.test(st);
+    const curs = /^(I|EM)$/.test(tag) ? !/font-style:\s*normal/i.test(st) : /font-style:\s*italic/i.test(st);
+    if (tag === "A") { const h = blUrl(c.getAttribute("href")); if (h) inner = `<a href="${esc(h)}">${inner}</a>`; }
+    if (curs) inner = `<em>${inner}</em>`;
+    if (negr) inner = `<strong>${inner}</strong>`;
+    if (/^(P|DIV|LI|BLOCKQUOTE|H[1-6]|TR)$/.test(tag) && out && !out.endsWith("<br>")) out += "<br>";
+    out += inner;
+  });
+  return out;
+}
+const blInerte = h => { const d = BL_INERTE.createElement("div"); d.innerHTML = String(h || ""); return d; };
+const blSan = h => blInline(blInerte(h));
+const blRecorta = h => String(h).replace(/^(?:\s|<br>)+|(?:\s|<br>)+$/g, "");
+const blPlano = h => blInerte(String(h || "").replace(/<br>/g, "\n")).textContent;
+
+// ---- De la hoja (o de algo pegado) a bloques
+function blLeer(root){
+  const out = [];
+  const texto = (t, x, extra) => { x = blRecorta(x); if (x.replace(/<br>/g, "").trim()) out.push(Object.assign({ t, x }, extra)); };
+  const contenedor = n => {            // junta el texto suelto en párrafos y visita los bloques que traiga dentro
+    let run = BL_INERTE.createElement("div");
+    const cierra = () => { if (run.childNodes.length) { texto("p", blInline(run)); run = BL_INERTE.createElement("div"); } };
+    [...n.childNodes].forEach(c => { if (c.nodeType === 1 && (c.matches(BL_BLOQUE) || c.querySelector(BL_BLOQUE))) { cierra(); visita(c); } else run.appendChild(BL_INERTE.importNode(c, true)); });
+    cierra();
+  };
+  const visita = n => {
+    const tag = n.tagName, b = n.dataset ? n.dataset.b : "";
+    if (b === "img") { const imgs = [...n.querySelectorAll("img[data-src]")].slice(0, 3).map(i => ({ src: i.dataset.src, alt: (i.getAttribute("alt") || "").trim() })); if (imgs.length) out.push({ t: "img", imgs, pie: (n.dataset.pie || "").trim(), w: BL_W[n.dataset.w] ? n.dataset.w : "g" }); return; }
+    if (b === "btn") { const x = (n.dataset.x || "").trim(); if (x) out.push({ t: "btn", x, href: blUrl(n.dataset.href) }); return; }
+    if (b === "hr" || tag === "HR") { out.push({ t: "hr" }); return; }
+    if (/^H[1-6]$/.test(tag)) { texto("h", blInline(n), { n: Math.min(4, +tag[1]) }); return; }
+    if (tag === "UL" || tag === "OL") {
+      const items = []; n.querySelectorAll("li").forEach(li => { const c = BL_INERTE.importNode(li, true); c.querySelectorAll("ul,ol").forEach(x => x.remove()); const x = blRecorta(blInline(c)); if (x) items.push(x); });
+      if (items.length) out.push({ t: tag === "UL" ? "ul" : "ol", items }); return;
+    }
+    if (tag === "BLOCKQUOTE") { texto("cita", blInline(n)); return; }
+    if (tag === "FIGURE" || tag === "TABLE") { const x = blRecorta(blInline(n)); if (x) texto("p", x); return; }
+    if (n.querySelector(BL_BLOQUE)) contenedor(n); else texto("p", blInline(n));
+  };
+  contenedor(root);
+  return out;
+}
+// ---- De bloques a HTML (edit = hoja donde se escribe; si no, vista como en la web)
+function blHtml(c, edit){
+  const ce = edit ? ' contenteditable="false"' : "";
+  return (Array.isArray(c) ? c : []).map(b => {
+    if (!b || typeof b !== "object") return "";
+    if (b.t === "p") return `<p>${blSan(b.x)}</p>`;
+    if (b.t === "h") { const n = Math.min(4, Math.max(1, parseInt(b.n, 10) || 2)); return `<h${n}>${blSan(b.x)}</h${n}>`; }
+    if (b.t === "ul" || b.t === "ol") return `<${b.t}>${(b.items || []).map(x => `<li>${blSan(x)}</li>`).join("")}</${b.t}>`;
+    if (b.t === "cita") return `<blockquote>${blSan(b.x)}</blockquote>`;
+    if (b.t === "hr") return edit ? `<div class="b-hr"${ce} data-b="hr"><hr></div>` : "<hr>";
+    if (b.t === "btn") { const h = blUrl(b.href); return edit ? `<div class="b-btn"${ce} data-b="btn" data-x="${esc(b.x)}" data-href="${esc(h)}"><span>${esc(b.x)}</span></div>` : `<p class="b-btn"><a${h ? ` href="${esc(h)}"` : ""}>${esc(b.x)}</a></p>`; }
+    if (b.t === "img") {
+      const imgs = (b.imgs || []).filter(i => i && i.src).slice(0, 3), w = BL_W[b.w] ? b.w : "g"; if (!imgs.length) return "";
+      return `<figure class="b-img b-${w}${imgs.length > 1 ? " b-fila" : ""}"${imgs.length > 1 ? ` style="--n:${imgs.length}"` : ""}${edit ? `${ce} data-b="img" data-w="${w}" data-pie="${esc(b.pie || "")}"` : ""}>${imgs.map(i => `<img src="${esc(urlOf(i.src))}" alt="${esc(i.alt || "")}"${edit ? ` data-src="${esc(i.src)}" draggable="false"` : ' loading="lazy"'}>`).join("")}${b.pie ? `<figcaption>${esc(b.pie)}</figcaption>` : ""}</figure>`;
+    }
+    return "";
+  }).join("");
+}
+const blImgs = c => (Array.isArray(c) ? c : []).flatMap(b => b && b.t === "img" ? (b.imgs || []).map(i => i && i.src).filter(Boolean) : []);
+const blTexto = c => (Array.isArray(c) ? c : []).map(b => !b ? "" : (b.t === "ul" || b.t === "ol") ? (b.items || []).map(x => "• " + blPlano(x)).join("\n") : (b.t === "p" || b.t === "h" || b.t === "cita") ? blPlano(b.x) : "").filter(Boolean).join("\n\n");
+// Texto de antes (escrito en el Caption, con ## para subtítulos y **negritas**) → bloques
+function blDesdeTexto(txt){
+  return String(txt || "").split(/\n{2,}/).map(b => b.trim()).filter(Boolean).map(b => {
+    const m = b.match(/^(#{1,4})\s+([\s\S]*)$/);
+    const x = esc(m ? m[2] : b).replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>").replace(/\n/g, "<br>");
+    return m ? { t: "h", n: m[1].length, x } : { t: "p", x };
+  });
+}
+const bloquesDe = p => (p && Array.isArray(p.cuerpo) && p.cuerpo.length) ? p.cuerpo : blDesdeTexto(p && p.caption);
+
+// ---- Abrir y colocar la hoja
+async function blPintarHoja(p){
+  const c = bloquesDe(p);
+  await signedUrls(blImgs(c));                         // las fotos del texto necesitan su dirección antes de pintarse
+  if (!current || current.id !== p.id) return false;   // se cerró o se abrió otro mientras tanto
+  blDoc.innerHTML = blHtml(c, true);
+  blColocar(); blEstado(); seoPintar(); blMin();
+  return true;
+}
+// ¿Es el mismo texto? (la base devuelve las propiedades de cada bloque en otro orden, por eso se comparan ordenadas)
+const blIgual = (a, b) => { const k = v => JSON.stringify(v == null ? null : v, (_, x) => x && typeof x === "object" && !Array.isArray(x) ? Object.keys(x).sort().reduce((o, c) => (o[c] = x[c], o), {}) : x); return k(a) === k(b); };
+async function blCargar(p){
+  blQuitarSel(); blRango = null; blDoc.innerHTML = "";
+  if (p.tipo !== "Blog") return;
+  if (!(await blPintarHoja(p))) return;
+  // Un artículo es largo y lo escriben varias personas: por si esta pantalla traía una versión vieja, se compara con lo guardado
+  // y, si cambió y todavía no se ha escrito nada aquí, se pinta la más nueva. No frena la apertura: la hoja ya está pintada.
+  try {
+    const { data: f } = await sb.from("posts").select("cuerpo,caption").eq("id", p.id).maybeSingle();
+    if (!f || !current || current.id !== p.id || current.tipo !== "Blog" || editorDirty) return;
+    const sinCuerpo = !(Array.isArray(f.cuerpo) && f.cuerpo.length);
+    if (blIgual(f.cuerpo, current.cuerpo) && !(sinCuerpo && (f.caption || "") !== (current.caption || ""))) return;
+    current.cuerpo = f.cuerpo; current.caption = f.caption; await blPintarHoja(current);
+  } catch (_) {}
+}
+// Escritorio: la hoja va dentro de la página (panel derecho) y la barra queda fija arriba. Celular: todo dentro del formulario.
+function blColocar(){
+  if (!esBlogEd()) return;
+  const slot = $("bl-slot");
+  if (BL_ANCHO.matches && slot) {
+    const prev = $("ed-prev"), pag = $("ed-prev-page");
+    if (blTools.parentNode !== prev) { prev.insertBefore(blTools, pag); prev.insertBefore(blCtx, pag); }
+    if (blDoc.parentNode !== slot) slot.appendChild(blDoc);
+  } else if (!BL_ANCHO.matches) {
+    const m = $("bl-movil");
+    if (blDoc.parentNode !== m) { m.appendChild(blTools); m.appendChild(blCtx); m.appendChild(blDoc); }
+  }
+}
+const blCambiaAncho = () => { if (current && esBlogEd()) blPintarPagina(); };
+if (BL_ANCHO.addEventListener) BL_ANCHO.addEventListener("change", blCambiaAncho); else if (BL_ANCHO.addListener) BL_ANCHO.addListener(blCambiaAncho);
+const blAviso = t => { $("bl-aviso").textContent = t || ""; };
+const blMin = () => { const e = $("ylp-min"); if (e) e.textContent = minLectura(blTexto(blLeer(blDoc))); };
+function blCambio(){ editorDirty = true; clearTimeout(blT); blT = setTimeout(() => { seoPintar(); blMin(); }, 350); }
+
+// ---- Selección y barra
+function blBloque(n){ while (n && n !== blDoc && n.parentNode !== blDoc) n = n.parentNode; return n && n !== blDoc ? n : null; }
+function blCursorEn(el){ const r = document.createRange(); r.selectNodeContents(el); r.collapse(true); blDoc.focus({ preventScroll: true }); const s = getSelection(); s.removeAllRanges(); s.addRange(r); blRango = r.cloneRange(); }
+function blFoco(){ blDoc.focus({ preventScroll: true }); if (blRango) { const s = getSelection(); s.removeAllRanges(); s.addRange(blRango); } }
+function blEstado(){
+  const q = (f, c) => { try { return document[f](c); } catch (_) { return f === "queryCommandValue" ? "" : false; } };
+  const dentro = document.activeElement === blDoc, tag = dentro ? String(q("queryCommandValue", "formatBlock") || "").toLowerCase() : "";
+  const act = dentro ? { p: tag === "p", h1: tag === "h1", h2: tag === "h2", h3: tag === "h3", h4: tag === "h4", cita: tag === "blockquote", b: q("queryCommandState", "bold"), i: q("queryCommandState", "italic"), ul: q("queryCommandState", "insertUnorderedList"), ol: q("queryCommandState", "insertOrderedList") } : {};
+  blTools.querySelectorAll("[data-bl]").forEach(b => b.classList.toggle("on", !!act[b.dataset.bl]));
+}
+document.addEventListener("selectionchange", () => {
+  const s = getSelection(); if (!s.rangeCount) return;
+  const r = s.getRangeAt(0);
+  if (blDoc.contains(r.commonAncestorContainer)) { blRango = r.cloneRange(); blEstado(); blAviso(""); }
+});
+blDoc.addEventListener("blur", blEstado);
+blDoc.addEventListener("focus", () => { if (!blDoc.firstChild) { blDoc.innerHTML = "<p><br></p>"; blCursorEn(blDoc.firstChild); } });
+blDoc.addEventListener("input", () => { blOrdenar(); blCambio(); });
+// El navegador a veces mete una lista, cita o título dentro de un párrafo: aquí se dejan como bloques sueltos de la hoja
+// (así Enter, los estilos y el guardado se comportan siempre igual). No toca el texto, solo lo saca de su envoltura.
+const BL_SUELTOS = "ul,ol,blockquote,h1,h2,h3,h4,p,div,[data-b]";
+const blCursor = () => { const s = getSelection(); return s.rangeCount && blDoc.contains(s.anchorNode) ? [s.anchorNode, s.anchorOffset, s.focusNode, s.focusOffset] : null; };
+function blPonCursor(c){   // repone el cursor en los mismos nodos de texto donde estaba (si siguen en la hoja)
+  if (!c || !c[0].isConnected || !c[2].isConnected || !blDoc.contains(c[0]) || !blDoc.contains(c[2]) || c[0] === blDoc) return false;
+  const tope = (n, o) => Math.min(o, n.nodeType === 3 ? n.nodeValue.length : n.childNodes.length);
+  try { const s = getSelection(); s.setBaseAndExtent(c[0], tope(c[0], c[1]), c[2], tope(c[2], c[3])); blRango = s.getRangeAt(0).cloneRange(); return true; } catch (_) { return false; }
+}
+// Posición del cursor contada en letras desde el inicio de la hoja: sobrevive aunque el navegador rehaga los nodos (al hacer listas lo hace)
+function blPos(){
+  const s = getSelection(); if (!s.rangeCount || !blDoc.contains(s.focusNode)) return null;
+  const b = blBloque(s.focusNode); if (!b || !b.textContent) return null;      // bloque vacío: el navegador ya deja bien el cursor
+  const r = document.createRange(); r.selectNodeContents(blDoc); r.setEnd(s.focusNode, s.focusOffset); const pos = r.toString().length;
+  r.selectNodeContents(b); r.setEnd(s.focusNode, s.focusOffset); return { pos, inicio: r.toString().length === 0 };
+}
+function blIrA(p){
+  const w = document.createTreeWalker(blDoc, NodeFilter.SHOW_TEXT); let n, acc = 0;
+  while ((n = w.nextNode())) {
+    const fin = acc + n.nodeValue.length;
+    if (fin > p.pos || (fin === p.pos && !p.inicio)) { const s = getSelection(); s.collapse(n, p.pos - acc); blRango = s.getRangeAt(0).cloneRange(); return true; }
+    acc = fin;
+  }
+  return false;
+}
+function blOrdenar(){
+  if (!blDoc.querySelector(":scope > p ul, :scope > p ol, :scope > p blockquote, :scope > p h1, :scope > p h2, :scope > p h3, :scope > p h4, :scope > div, :scope > blockquote p, :scope > h1 ul, :scope > h2 ul, :scope > h3 ul, :scope > h4 ul")) return;
+  // mover nodos descoloca el cursor: se anota dónde estaba (los nodos son los mismos, solo cambian de lugar) y se repone al final
+  const cur = blCursor();
+  [...blDoc.children].forEach(n => {
+    if (n.dataset.b) return;
+    if (/^(P|DIV)$/.test(n.tagName) && n.querySelector(BL_SUELTOS)) {
+      const frag = document.createDocumentFragment(); let run = null;
+      [...n.childNodes].forEach(c => {
+        if (c.nodeType === 1 && c.matches(BL_SUELTOS)) { run = null; frag.appendChild(c); return; }
+        if (!run) { if (c.nodeType === 3 && !c.nodeValue.trim()) return; run = document.createElement("p"); frag.appendChild(run); }
+        run.appendChild(c);
+      });
+      n.replaceWith(frag);
+    } else if (n.tagName === "DIV") { const p = document.createElement("p"); while (n.firstChild) p.appendChild(n.firstChild); n.replaceWith(p); }
+    else if (n.tagName === "BLOCKQUOTE" && n.querySelector("p")) n.querySelectorAll("p").forEach(x => { const br = x.nextSibling ? document.createElement("br") : null; while (x.firstChild) x.before(x.firstChild); if (br) x.before(br); x.remove(); });
+    else if (/^H[1-4]$/.test(n.tagName) && n.querySelector("ul,ol")) { const p = document.createElement(n.tagName); p.textContent = n.textContent; n.replaceWith(p); }
+  });
+  blPonCursor(cur);
+}
+blTools.addEventListener("mousedown", e => { if (e.target.closest("button")) e.preventDefault(); });   // no perder la selección del texto
+blTools.addEventListener("click", e => { const b = e.target.closest("[data-bl]"); if (b && current) blCmd(b.dataset.bl); });
+function blCmd(k){
+  if (k === "img") { blDestino = null; $("bl-file").click(); return; }
+  if (k === "btn") { blSeleccionar(blInsertar(blHtml([{ t: "btn", x: "Texto del botón", href: "" }], true))); blCambio(); const i = blCtx.querySelector('[data-cx="btn-x"]'); if (i) { i.focus(); i.select(); } return; }
+  if (k === "hr") { blInsertar(blHtml([{ t: "hr" }], true)); blCambio(); return; }
+  blQuitarSel(); blFoco();
+  if (k === "a") { blCtxEnlace(); return; }
+  const antes = /^(ul|ol)$/.test(k) && getSelection().isCollapsed ? blPos() : null;
+  if (k === "b") document.execCommand("bold");
+  else if (k === "i") document.execCommand("italic");
+  else if (k === "ul") document.execCommand("insertUnorderedList");
+  else if (k === "ol") document.execCommand("insertOrderedList");
+  else {
+    const tag = k === "cita" ? "blockquote" : k;
+    let actual = ""; try { actual = String(document.queryCommandValue("formatBlock") || "").toLowerCase(); } catch (_) {}
+    document.execCommand("formatBlock", false, actual === tag && tag !== "p" ? "p" : tag);   // tocar otra vez el mismo estilo lo regresa a párrafo
+  }
+  blOrdenar();
+  if (antes) blIrA(antes);   // al hacer la lista el navegador manda el cursor al inicio: se regresa a donde estaba
+  blEstado(); blCambio();
+}
+blDoc.addEventListener("keydown", e => {
+  if (e.key !== "Enter" || e.shiftKey || e.isComposing) return;
+  const n = getSelection().anchorNode, el = n && (n.nodeType === 1 ? n : n.parentElement), b = el && el.closest("h1,h2,h3,h4,blockquote");
+  // Enter en un título o cita vacíos: vuelve a texto normal (para "salir" del estilo)
+  if (b && blDoc.contains(b) && !b.textContent.trim()) { e.preventDefault(); document.execCommand("formatBlock", false, "p"); blOrdenar(); blEstado(); }
+});
+
+// ---- Pegar y soltar: entra limpio (títulos, listas, negritas, enlaces); las fotos pegadas o soltadas se suben
+blDoc.addEventListener("paste", e => {
+  const cd = e.clipboardData; if (!cd) return;
+  e.preventDefault();
+  const fotos = [...(cd.files || [])].filter(f => f.type.startsWith("image/"));
+  if (fotos.length) { blSubirFotos(fotos, null); return; }
+  const html = cd.getData("text/html"), txt = cd.getData("text/plain");
+  let limpio = "";
+  if (html) { const c = blLeer(blInerte(html)).filter(b => b.t !== "img" && b.t !== "btn"); limpio = c.length === 1 && c[0].t === "p" ? c[0].x : blHtml(c, true); }
+  if (!limpio && txt) { const partes = txt.replace(/\r/g, "").split(/\n+/).map(x => x.trim()).filter(Boolean); limpio = partes.length > 1 ? partes.map(x => `<p>${esc(x)}</p>`).join("") : esc(txt.trim()); }
+  if (limpio) document.execCommand("insertHTML", false, limpio);
+  blCambio();
+});
+blDoc.addEventListener("dragover", e => { if ([...(e.dataTransfer.types || [])].includes("Files")) e.preventDefault(); });
+blDoc.addEventListener("drop", e => {
+  const fs = [...(e.dataTransfer.files || [])]; if (!fs.length) return;
+  e.preventDefault(); const b = blBloque(e.target); if (b) { const r = document.createRange(); r.selectNodeContents(b); r.collapse(false); blRango = r; }
+  blSubirFotos(fs, null);
+});
+blDoc.addEventListener("dragstart", e => { if (e.target.closest && e.target.closest("[data-b]")) e.preventDefault(); });
+
+// ---- Imágenes, botones y líneas: piezas que se seleccionan con un clic y se ajustan en la franja de opciones
+function blInsertar(html, ref){
+  const t = document.createElement("template"); t.innerHTML = html; const nodo = t.content.firstElementChild; if (!nodo) return null;
+  if (!ref && blIsla && blIsla.isConnected) ref = blIsla;
+  if (!ref && blRango) { const c = blRango.startContainer; ref = c === blDoc ? (blDoc.childNodes[Math.max(0, blRango.startOffset - 1)] || null) : blBloque(c); }
+  if (ref && ref.parentNode === blDoc) { if (ref.nodeType === 1 && ref.tagName === "P" && !ref.textContent.trim() && !ref.querySelector("[data-b],img")) ref.replaceWith(nodo); else ref.after(nodo); }
+  else blDoc.appendChild(nodo);
+  const sig = nodo.nextElementSibling;
+  if (!sig || sig.dataset.b) { const p = document.createElement("p"); p.innerHTML = "<br>"; nodo.after(p); }   // siempre se puede seguir escribiendo debajo
+  const r = document.createRange(); r.selectNodeContents(nodo.nextElementSibling); r.collapse(true); blRango = r;   // lo siguiente continúa debajo
+  return nodo;
+}
+function blQuitarSel(){ if (blIsla) blIsla.classList.remove("sel"); blIsla = null; blCtx.classList.add("hidden"); blCtx.innerHTML = ""; }
+function blSeleccionar(el){ if (!el) return; blQuitarSel(); blIsla = el; el.classList.add("sel"); getSelection().removeAllRanges(); blCtxIsla(); }
+blDoc.addEventListener("click", e => { const isla = e.target.closest("[data-b]"); if (isla && blDoc.contains(isla)) { e.preventDefault(); blSeleccionar(isla); } else blQuitarSel(); });
+document.addEventListener("keydown", e => {
+  if (!blIsla || !current || e.target.closest("input,textarea,select,[contenteditable=true]")) return;
+  if (e.key === "Backspace" || e.key === "Delete") { e.preventDefault(); blAccion("quitar"); }
+});
+function blAjustarFila(f){ const n = f.querySelectorAll("img").length; f.classList.toggle("b-fila", n > 1); if (n > 1) f.style.setProperty("--n", Math.min(3, n)); else f.style.removeProperty("--n"); }
+function blCtxIsla(){
+  const el = blIsla; if (!el) return;
+  const t = el.dataset.b, mover = '<button type="button" class="btn ghost small" data-cx="texto-arriba" title="Escribir un párrafo arriba">＋ Texto arriba</button><button type="button" class="btn ghost small" data-cx="arriba" title="Subir un lugar">↑</button><button type="button" class="btn ghost small" data-cx="abajo" title="Bajar un lugar">↓</button><button type="button" class="btn ghost small" data-cx="quitar">Quitar</button>';
+  let h;
+  if (t === "img") {
+    const imgs = [...el.querySelectorAll("img")], w = el.dataset.w || "g";
+    h = `<div class="fila"><b>${imgs.length > 1 ? imgs.length + " fotos en fila" : "Imagen"}</b>${imgs.length === 1 ? `<span class="seg" role="group" aria-label="Tamaño">${[["ch", "Chica"], ["m", "Mediana"], ["g", "Grande"]].map(([k, l]) => `<button type="button" data-cx="w" data-v="${k}" class="${w === k ? "on" : ""}">${l}</button>`).join("")}</span>` : '<button type="button" class="btn ghost small" data-cx="separar">Separar en fotos sueltas</button>'}${imgs.length < 3 ? '<button type="button" class="btn ghost small" data-cx="mas">＋ Foto al lado</button>' : ""}${mover}</div>`
+      + imgs.map((im, i) => `<div class="fila"><input type="text" data-cx="alt" data-i="${i}" maxlength="125" aria-label="Texto alternativo${imgs.length > 1 ? " de la foto " + (i + 1) : ""}" placeholder="${imgs.length > 1 ? "Foto " + (i + 1) + ": qué" : "Qué"} se ve en la foto (texto alternativo: ayuda al SEO y a quien no puede verla)" value="${esc(im.getAttribute("alt") || "")}">${imgs.length > 1 ? `<button type="button" class="btn ghost small" data-cx="quitar-foto" data-i="${i}">Quitar esta</button>` : ""}</div>`).join("")
+      + `<div class="fila"><input type="text" data-cx="pie" maxlength="200" aria-label="Pie de foto" placeholder="Pie de foto (opcional), por ejemplo el crédito del fotógrafo" value="${esc(el.dataset.pie || "")}"></div>`;
+  } else if (t === "btn") {
+    h = `<div class="fila"><b>Botón</b><input type="text" data-cx="btn-x" maxlength="80" aria-label="Texto del botón" placeholder="Texto del botón" value="${esc(el.dataset.x || "")}"><input type="url" data-cx="btn-href" aria-label="Enlace del botón" placeholder="A dónde lleva: https://www.yucatanlove.com/…" value="${esc(el.dataset.href || "")}">${mover}</div>`;
+  } else h = `<div class="fila"><b>Línea separadora</b>${mover}</div>`;
+  blCtx.innerHTML = h; blCtx.classList.remove("hidden");
+}
+function blCtxEnlace(){
+  if (!blRango) return;
+  let a = blRango.startContainer; while (a && a !== blDoc && !(a.nodeType === 1 && a.tagName === "A")) a = a.parentNode;
+  if (a === blDoc) a = null;
+  if (!a && blRango.collapsed) { blAviso("Selecciona primero el texto que llevará el enlace."); return; }
+  blCtx.innerHTML = `<div class="fila"><b>Enlace</b><input type="url" id="bl-url" aria-label="Dirección del enlace" placeholder="https://www.yucatanlove.com/…" value="${esc(a ? a.getAttribute("href") || "" : "")}"><button type="button" class="btn small" data-cx="enlace-ok">Aplicar</button>${a ? '<button type="button" class="btn ghost small" data-cx="enlace-no">Quitar enlace</button>' : ""}<button type="button" class="btn ghost small" data-cx="cerrar">Cancelar</button></div>`;
+  blCtx.classList.remove("hidden"); blCtx._a = a; $("bl-url").focus();
+}
+blCtx.addEventListener("mousedown", e => { if (e.target.closest("button")) e.preventDefault(); });
+blCtx.addEventListener("click", e => { const b = e.target.closest("button[data-cx]"); if (b) blAccion(b.dataset.cx, b); });
+blCtx.addEventListener("input", e => { const i = e.target.closest("input[data-cx]"); if (i) blAccion(i.dataset.cx, i); });
+blCtx.addEventListener("keydown", e => { if (e.key === "Enter" && e.target.tagName === "INPUT") { e.preventDefault(); if (e.target.id === "bl-url") blAccion("enlace-ok"); else e.target.blur(); } });
+function blAccion(k, el){
+  if (k === "cerrar") { blQuitarSel(); blFoco(); return; }
+  if (k === "enlace-ok" || k === "enlace-no") {
+    const a = blCtx._a, url = k === "enlace-ok" ? blUrl($("bl-url").value) : "";
+    if (k === "enlace-ok" && !url) { blAviso("Escribe una dirección completa, por ejemplo https://www.yucatanlove.com/"); return; }
+    blFoco();
+    if (a && a.isConnected) { const r = document.createRange(); r.selectNodeContents(a); const s = getSelection(); s.removeAllRanges(); s.addRange(r); }
+    document.execCommand(url ? "createLink" : "unlink", false, url || undefined);
+    blQuitarSel(); blCambio(); return;
+  }
+  const f = blIsla; if (!f) return;
+  if (k === "alt") { const im = f.querySelectorAll("img")[+el.dataset.i]; if (im) im.setAttribute("alt", el.value); }
+  else if (k === "pie") { f.dataset.pie = el.value; let fc = f.querySelector("figcaption"); if (el.value.trim()) { if (!fc) { fc = document.createElement("figcaption"); f.appendChild(fc); } fc.textContent = el.value; } else if (fc) fc.remove(); }
+  else if (k === "btn-x") { f.dataset.x = el.value; f.querySelector("span").textContent = el.value || "Texto del botón"; }
+  else if (k === "btn-href") f.dataset.href = el.value.trim();
+  else if (k === "w") { f.dataset.w = el.dataset.v; f.classList.remove("b-g", "b-m", "b-ch"); f.classList.add("b-" + el.dataset.v); blCtxIsla(); }
+  else if (k === "arriba") { const a = f.previousElementSibling; if (a) a.before(f); f.scrollIntoView({ block: "nearest" }); }
+  else if (k === "abajo") { const s = f.nextElementSibling; if (s) s.after(f); if (!f.nextElementSibling) { const p = document.createElement("p"); p.innerHTML = "<br>"; f.after(p); } f.scrollIntoView({ block: "nearest" }); }
+  else if (k === "texto-arriba") { const p = document.createElement("p"); p.innerHTML = "<br>"; f.before(p); blQuitarSel(); blCursorEn(p); }
+  else if (k === "quitar") { blQuitarSel(); f.remove(); }
+  else if (k === "mas") { blDestino = f; $("bl-file").click(); return; }
+  else if (k === "quitar-foto") { const im = f.querySelectorAll("img")[+el.dataset.i]; if (im) im.remove(); if (!f.querySelector("img")) { blQuitarSel(); f.remove(); } else { blAjustarFila(f); blCtxIsla(); } }
+  else if (k === "separar") {
+    const imgs = [...f.querySelectorAll("img")].map(i => ({ src: i.dataset.src, alt: i.getAttribute("alt") || "" })); let ult = f;
+    imgs.forEach((im, i) => { ult = blInsertar(blHtml([{ t: "img", imgs: [im], pie: i === imgs.length - 1 ? (f.dataset.pie || "") : "", w: "g" }], true), ult); });
+    blQuitarSel(); f.remove(); blSeleccionar(ult);
+  }
+  blCambio();
+}
+$("bl-file").addEventListener("change", e => { const fs = [...e.target.files]; e.target.value = ""; const d = blDestino; blDestino = null; blSubirFotos(fs, d); });
+async function blSubirFotos(files, dest){
+  files = files.filter(f => f.type.startsWith("image/") || /\.(heic|heif)$/i.test(f.name));
+  if (!files.length || !current) return;
+  if (files.some(f => f.size > 40 * 1024 * 1024)) { blAviso("Alguna imagen pesa más de 40 MB. Usa una más ligera."); return; }
+  if (dest) files = files.slice(0, Math.max(0, 3 - dest.querySelectorAll("img").length)); else files = files.slice(0, 12);
+  const id = current.id; blSubiendo++; blAviso(files.length > 1 ? `Subiendo ${files.length} imágenes…` : "Subiendo imagen…");
+  try {
+    const rutas = [];
+    for (let i = 0; i < files.length; i++) rutas.push(await uploadImage(files[i], id, "b" + i));
+    await signedUrls(rutas);
+    if (!current || current.id !== id) return;
+    if (dest && dest.isConnected) {
+      rutas.forEach(r => { const im = document.createElement("img"); im.src = urlOf(r); im.dataset.src = r; im.alt = ""; im.draggable = false; dest.insertBefore(im, dest.querySelector("figcaption")); });
+      blAjustarFila(dest); blSeleccionar(dest);
+    } else {
+      // una sola → imagen suelta; 2 o 3 → una fila; más → varias filas
+      const grupos = [], r = rutas.slice(); while (r.length) grupos.push(r.splice(0, r.length === 4 ? 2 : Math.min(3, r.length)));
+      let ult = null; grupos.forEach(g => { ult = blInsertar(blHtml([{ t: "img", imgs: g.map(src => ({ src, alt: "" })), pie: "", w: "g" }], true), ult); });
+      if (ult) { blSeleccionar(ult); ult.scrollIntoView({ block: "nearest" }); }
+    }
+    emsg(""); blAviso(""); blCambio();
+  } catch (err) { blAviso(errMsg(err)); emsg(errMsg(err), true); }
+  finally { blSubiendo--; }
+}
+// Al pasar un post a tipo Blog, lo que ya estaba escrito en el Caption se vuelve el inicio del artículo
+$("e-tipo").addEventListener("change", () => { if (current && esBlogEd() && !blDoc.textContent.trim() && !blDoc.querySelector("[data-b]")) { blDoc.innerHTML = blHtml(bloquesDe(Object.assign({}, current, { cuerpo: current.cuerpo, caption: $("e-caption").value })), true); } wpPintar(); });
+
+/* ---------- Pasar el artículo a WordPress ----------
+   1) Copiar con formato y descargar las fotos: funciona siempre (se pega en WordPress o en un widget de texto de Elementor).
+   2) Enviar como borrador: lo hace la función "wp" de Supabase con la clave de aplicación de WordPress (guardada allá,
+      nunca en la app). Sube las fotos a la biblioteca de WordPress, arma el artículo y lo deja como borrador. Solo quien administra. */
+const wpMsg = (t, warn) => { const m = $("wp-msg"); m.textContent = t || ""; m.classList.toggle("warn", !!warn); };
+function blHtmlCopia(c){
+  let n = 0;
+  return (Array.isArray(c) ? c : []).map(b => b.t === "img" ? (b.imgs || []).map(i => `<p><em>[Imagen ${++n}${i.alt ? ": " + esc(i.alt) : ""}]</em></p>`).join("") + (b.pie ? `<p><em>${esc(b.pie)}</em></p>` : "") : blHtml([b], false)).join("\n");
+}
+async function copiarRico(html, texto){
+  try { if (navigator.clipboard && window.ClipboardItem) { await navigator.clipboard.write([new ClipboardItem({ "text/html": new Blob([html], { type: "text/html" }), "text/plain": new Blob([texto], { type: "text/plain" }) })]); return true; } } catch (_) {}
+  const d = document.createElement("div"); d.innerHTML = html; d.style.cssText = "position:fixed;left:-9999px;top:0"; document.body.appendChild(d);
+  const r = document.createRange(); r.selectNodeContents(d); const s = getSelection(); s.removeAllRanges(); s.addRange(r);
+  let ok = false; try { ok = document.execCommand("copy"); } catch (_) {} s.removeAllRanges(); d.remove(); return ok;
+}
+$("wp-copiar").addEventListener("click", async () => {
+  const b = borradorBlog(); if (!b) return;
+  if (!b.cuerpo.length) { wpMsg("Todavía no hay texto en el artículo."); return; }
+  const ok = await copiarRico(blHtmlCopia(b.cuerpo), blTexto(b.cuerpo));
+  wpMsg(ok ? "Artículo copiado con su formato (títulos, negritas, listas y enlaces). Pégalo en WordPress; donde dice [Imagen 1], [Imagen 2]… van las fotos." : "No se pudo copiar. Intenta de nuevo.", !ok);
+});
+$("wp-fotos").addEventListener("click", async () => {
+  const b = borradorBlog(); if (!b) return;
+  const rutas = [b.imagen_path, ...blImgs(b.cuerpo)].filter(Boolean);
+  if (!rutas.length) { wpMsg("Este artículo todavía no tiene fotos guardadas."); return; }
+  wpMsg("Preparando fotos…");
+  try {
+    await signedUrls(rutas); const base = (b.seo && b.seo.slug) || slugify(b.copy) || "articulo";
+    for (let i = 0; i < rutas.length; i++) {
+      const esPortada = i === 0 && !!b.imagen_path, num = i + (b.imagen_path ? 0 : 1);
+      const f = await aJpg(rutas[i], esPortada ? `${base}-portada` : `${base}-imagen-${String(num).padStart(2, "0")}`);
+      const u = URL.createObjectURL(f), a = document.createElement("a"); a.href = u; a.download = f.name; document.body.appendChild(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(u), 4000); await new Promise(r => setTimeout(r, 350));
+    }
+    wpMsg(`${rutas.length} fotos descargadas, numeradas en el orden en que aparecen en el artículo.`);
+  } catch (err) { wpMsg(errMsg(err), true); }
+});
+$("wp-enviar").addEventListener("click", async () => {
+  if (!current || !esAdmin) return;
+  if (editorDirty) { wpMsg("Guarda primero los cambios del artículo y vuelve a enviarlo.", true); return; }
+  const btn = $("wp-enviar"); btn.disabled = true; wpMsg("Enviando a WordPress: sube las fotos y arma el borrador. Puede tardar un minuto…");
+  try {
+    if (!(Array.isArray(current.cuerpo) && current.cuerpo.length)) {   // artículo escrito antes del editor nuevo: su texto se guarda ya con formato antes de enviarlo
+      const c = blLeer(blDoc); if (!c.length) { wpMsg("Todavía no hay texto en el artículo.", true); return; }
+      const { error: e0 } = await sb.from("posts").update({ cuerpo: c, caption: blTexto(c) || null }).eq("id", current.id); if (e0) throw e0;
+      current.cuerpo = c; current.caption = blTexto(c) || null;
+    }
+    const { data, error } = await sb.functions.invoke("wp", { body: { accion: "enviar", post_id: current.id } });
+    let res = data; if (error) { try { res = await error.context.json(); } catch (_) { res = { error: error.message }; } }
+    if (!res || res.error) { wpMsg(res && res.sin_conexion ? "WordPress todavía no está conectado: falta guardar su usuario y su clave de aplicación en Supabase." : (res && res.error) || "No se pudo enviar. Intenta de nuevo.", true); return; }
+    if (res.wp && current) current.wp = res.wp;
+    wpPintar();   // primero el estado («En WordPress desde…»), después el aviso, para que no se borre
+    wpMsg((res.nuevo ? "Listo: quedó como borrador en WordPress." : "Listo: se actualizó en WordPress.") + (res.avisos && res.avisos.length ? " Ojo: " + res.avisos.join(" ") : ""));
+  } catch (err) { wpMsg(errMsg(err), true); }
+  finally { btn.disabled = false; }
+});
+function wpPintar(){
+  const w = current && current.wp;
+  $("wp-enviar").classList.toggle("hidden", !esAdmin);
+  $("wp-enviar").textContent = w && w.id ? "Actualizar en WordPress" : "Enviar a WordPress como borrador";
+  const ed = w && /^https:\/\//.test(w.editar || "") ? w.editar : "";
+  $("wp-estado").innerHTML = w && w.id ? `En WordPress desde ${esc(cuando(w.at))}${w.por ? " · lo envió " + esc(nombreDe(w.por)) : ""}${ed ? ` · <a href="${esc(ed)}" target="_blank" rel="noopener">Abrir en WordPress ↗</a>` : ""}` : (esAdmin ? "" : "Cuando esté terminado, quien administra lo envía a WordPress.");
+  wpMsg("");
+}
+
 /* ---------- Vista del artículo del blog (calcada de una entrada de yucatanlove.com) ---------- */
 let blgPost = null;
-function parrafos(txt){ return String(txt || "").split(/\n{2,}/).map(b => b.trim()).filter(Boolean).map(b => {
-  const t = esc(b).replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>");
-  if (/^#{2}\s/.test(b)) return `<h2>${esc(b.replace(/^#+\s*/, ""))}</h2>`;
-  if (/^#{3}\s/.test(b)) return `<h3>${esc(b.replace(/^#+\s*/, ""))}</h3>`;
-  return `<p>${t.replace(/\n/g, "<br>")}</p>`; }).join(""); }
 function htmlArticulo(p, conSeo){
   const s = p.seo || {};
   const d = p.fecha ? new Date(p.fecha + "T12:00:00") : null, mes = d ? d.toLocaleString("en-US", { month: "short" }) : "";
@@ -905,17 +1332,17 @@ function htmlArticulo(p, conSeo){
     <div class="ylp-body">
       <span class="ylp-cat">${esc(s.cat || "Sin categoría")}</span>
       <h1>${esc(h1)}</h1>
-      <div class="ylp-txt">${parrafos(p.caption) || "<p><em>Aún no hay texto. Escríbelo en el Caption del post.</em></p>"}</div>
+      <div class="ylp-txt">${p._slot ? '<div id="bl-slot"></div>' : (blHtml(bloquesDe(p), false).replace(/<a href=/g, '<a target="_blank" rel="noopener" href=') || "<p><em>Aún no hay texto. Ábrelo para editar y escribe sobre la página.</em></p>")}</div>
       <div class="ylp-tags"><span>TAGS:</span>${tags.length ? tags.map(t => `<a>${esc(t)}</a>`).join("") : "<em>sin etiquetas</em>"}</div>
-      <div class="ylp-by">Written by <b>${esc(s.autor || "—")}</b> · Est. reading time <b>${minLectura(p.caption)} minutes</b></div>
+      <div class="ylp-by">Written by <b>${esc(s.autor || "—")}</b> · Est. reading time <b id="ylp-min">${minLectura(blTexto(bloquesDe(p)))}</b><b> minutes</b></div>
       ${rel.length ? `<h3 class="ylp-rel-t">You May Also Like</h3><div class="ylp-rel">${rel.map(r => `<div><div class="yl-img">${r.imagen_path ? `<img src="${esc(thumbUrl(r.imagen_path))}" alt="">` : ""}</div><h4>${esc(r.copy || "Sin título")}</h4></div>`).join("")}</div>` : ""}
     </div>
     ${conSeo ? `<div class="ylp-seo"><h4>Lo que verá Google y el equipo web</h4>
-      ${[["Título SEO", s.titulo], ["Meta descripción", s.desc], ["URL", s.slug ? "https://www.yucatanlove.com/" + s.slug + "/" : ""], ["Palabra clave", s.kw], ["Categoría", s.cat], ["Etiquetas", s.tags], ["Autor", s.autor], ["Alt de la imagen", s.alt], ["H1", h1], ["Texto", p.caption]].map(([l, v]) => `<div class="ylp-f"><span>${l}</span><p>${esc(v ? (l === "Texto" ? String(v).slice(0, 220) + (String(v).length > 220 ? "…" : "") : v) : "— falta —")}</p>${v ? `<button type="button" class="btn ghost small" data-cp="${esc(l)}">Copiar</button>` : ""}</div>`).join("")}
+      ${[["Título SEO", s.titulo], ["Meta descripción", s.desc], ["URL", s.slug ? "https://www.yucatanlove.com/" + s.slug + "/" : ""], ["Palabra clave", s.kw], ["Categoría", s.cat], ["Etiquetas", s.tags], ["Autor", s.autor], ["Alt de la imagen", s.alt], ["H1", h1], ["Texto", blTexto(bloquesDe(p))]].map(([l, v]) => `<div class="ylp-f"><span>${l}</span><p>${esc(v ? (l === "Texto" ? String(v).slice(0, 220) + (String(v).length > 220 ? "…" : "") : v) : "— falta —")}</p>${v ? `<button type="button" class="btn ghost small" data-cp="${esc(l)}">Copiar</button>` : ""}</div>`).join("")}
     </div>` : ""}</div>`;
 }
 async function abrirArticulo(p){
-  blgPost = p; const s = p.seo || {}; await signedUrls(slidesOf(p));
+  blgPost = p; const s = p.seo || {}; await signedUrls([...slidesOf(p), ...blImgs(bloquesDe(p))]);
   const h1 = p.copy || (s.titulo || "").split("|")[0].trim() || "Sin título";
   $("blg-url").textContent = "yucatanlove.com/" + (s.slug || slugify(h1)) + "/";
   $("blg-page").innerHTML = htmlArticulo(p, true);
@@ -925,14 +1352,27 @@ async function abrirArticulo(p){
 /* Borrador del editor (lo que se está escribiendo, aunque no esté guardado) */
 function borradorBlog(){
   if (!current) return null;
-  return Object.assign({}, current, { copy: $("e-copy").value.trim(), caption: $("e-caption").value, fecha: $("e-fecha").value || current.fecha, seo: seoLeer(), _portada: pendingUrl || "", _borrador: true });
+  const cuerpo = blLeer(blDoc);
+  return Object.assign({}, current, { copy: $("e-copy").value.trim(), cuerpo, caption: blTexto(cuerpo), fecha: $("e-fecha").value || current.fecha, seo: seoLeer(), _portada: pendingUrl || "", _borrador: true });
 }
 let prevTimer = null;
 function pintarPrevBlog(){
   clearTimeout(prevTimer);
-  const esBlog = $("e-tipo").value === "Blog"; $("editor").classList.toggle("ed-blog", esBlog);
-  prevTimer = setTimeout(() => { if (!esBlog || !current) return; const b = borradorBlog(); $("ed-prev-page").innerHTML = htmlArticulo(b, false);
-    $("ed-prev-url").textContent = "yucatanlove.com/" + ((b.seo || {}).slug || slugify(b.copy) || "…") + "/"; }, 250);
+  const esBlog = esBlogEd(); $("editor").classList.toggle("ed-blog", esBlog);
+  $("e-copy-l").textContent = esBlog ? "Título del artículo (H1)" : "Copy";
+  if (!esBlog) blQuitarSel();
+  prevTimer = setTimeout(() => { if (esBlogEd() && current) blPintarPagina(); }, 250);
+}
+// Rehace lo que rodea al texto (encabezado del sitio, portada, título, etiquetas) y vuelve a colocar la hoja donde se escribe
+function blPintarPagina(){
+  const b = borradorBlog(); if (!b) return;
+  if (BL_ANCHO.matches) {
+    if (document.activeElement === blDoc && $("bl-slot")) return;   // no mover la hoja mientras se escribe en ella
+    $("ed-prev").appendChild(blDoc);
+    b._slot = true; $("ed-prev-page").innerHTML = htmlArticulo(b, false);
+  }
+  blColocar();
+  $("ed-prev-url").textContent = "yucatanlove.com/" + ((b.seo || {}).slug || slugify(b.copy) || "…") + "/";
 }
 function cerrarArticulo(){ $("blg").classList.add("hidden"); document.body.classList.remove("sv-open"); blgPost = null; }
 $("blg-close").addEventListener("click", cerrarArticulo);
@@ -1187,7 +1627,7 @@ function openEditor(p){
   ["fecha","copy","caption","inspo","contenido"].forEach(k => { $("e-"+k).value = p[k] || ""; });
   LINK_FIELDS.forEach(k => { $("e-"+k+"-links").innerHTML = chipsLinks(p[k]); });
   pvIdx = 0; renderPreview(); renderSlides(); $("e-rmimg").classList.toggle("hidden", !p.imagen_path); emsg("");
-  cargarHistorial(); iaLimpiar(); seoCargar(p); pintarTomado(); pintarPrevBlog();
+  cargarHistorial(); iaLimpiar(); blCargar(p); seoCargar(p); pintarTomado(); pintarPrevBlog(); wpPintar();
   renderUltimo(); renderComentarios(); $("c-text").value = "";
   $("editor").classList.remove("hidden"); $("scrim").classList.remove("hidden");
   if (isMobile()) document.body.style.overflow = "hidden";
@@ -1199,7 +1639,7 @@ function closeEditor(fromPop){
   if ($("editor").classList.contains("hidden")) return;
   if (editorDirty && !fromPop && !window.__forceClose) { emsg("Tienes cambios sin guardar. Toca Guardar o vuelve a tocar ✕ para descartarlos.", true); window.__forceClose = true; setTimeout(() => { window.__forceClose = false; }, 4000); return; }
   window.__forceClose = false;
-  current = null; editorDirty = false; pendingFile = null;
+  current = null; editorDirty = false; pendingFile = null; blQuitarSel(); blDoc.innerHTML = "";
   $("editor").classList.add("hidden"); $("scrim").classList.add("hidden"); document.body.style.overflow = "";
   if (!fromPop && history.state && history.state.editor) history.back();
   if (view === "feed") renderFeed();
@@ -1219,10 +1659,10 @@ $("e-file").addEventListener("change", e => {
   if (f.size > 40 * 1024 * 1024) { emsg("La imagen pesa más de 40 MB. Usa una más ligera.", true); return; }
   pendingFile = f; editorDirty = true; if (pendingUrl) URL.revokeObjectURL(pendingUrl); pendingUrl = URL.createObjectURL(f); pvIdx = 0; renderPreview(); emsg("Portada lista. Toca Guardar.");
 });
-async function uploadImage(file, postId){
+async function uploadImage(file, postId, suf = ""){
   emsg("Optimizando imagen…");
   const big = await compress(file, 1440, 0.86), small = big ? await compress(file, 480, 0.8, big.blob.type) : null;
-  const stamp = Date.now();
+  const stamp = Date.now() + suf;
   let path, body, type;
   if (big) { path = `${postId}/${stamp}.${big.ext}`; body = big.blob; type = big.blob.type; }
   else { // el navegador no pudo leerla (p. ej. algunos HEIC): se sube tal cual
@@ -1242,6 +1682,8 @@ $("e-save").addEventListener("click", async () => {
   try {
     const patch = {};
     E_FIELDS.forEach(k => { const v = $("e-"+k).value; patch[k] = (k === "copy" ? v.trim() : v) || null; });
+    const fotosAntes = blImgs(current.cuerpo);
+    if (patch.tipo === "Blog") { if (blSubiendo) throw new Error("Espera a que terminen de subir las imágenes del artículo."); patch.cuerpo = blLeer(blDoc); patch.caption = blTexto(patch.cuerpo) || null; }
     const seo = seoLeer(); if (patch.tipo === "Blog" || Object.values(seo).some(Boolean)) patch.seo = seo;
     const old = current.imagen_path;
     if (pendingFile) patch.imagen_path = await uploadImage(pendingFile, current.id);
@@ -1251,6 +1693,7 @@ $("e-save").addEventListener("click", async () => {
     const fr = Array.isArray(fila) ? fila[0] : fila; if (fr) Object.assign(patch, fr);
     if (patch.imagen_path) { await signedUrls(allImagePaths([{ imagen_path: patch.imagen_path }])); if (old) sb.storage.from(CFG.bucket).remove([old, thumbOf(old)]); }
     Object.assign(current, patch); const i = posts.findIndex(p => p.id === current.id); if (i >= 0) posts[i] = current;
+    if (patch.cuerpo) { const quedan = blImgs(patch.cuerpo), sobran = fotosAntes.filter(x => !quedan.includes(x)); if (sobran.length) sb.storage.from(CFG.bucket).remove(sobran.flatMap(x => [x, thumbOf(x)])); }   // fotos que se quitaron del artículo
     pendingFile = null; editorDirty = false; emsg("Guardado."); current.updated_by = user.email; current.updated_at = new Date().toISOString(); renderUltimo();
     $("e-title").textContent = current.fecha ? `Post del ${fmtCorto(current.fecha)}` : "Post nuevo";
     pvIdx = 0; renderPreview(); renderSlides(); $("e-rmimg").classList.toggle("hidden", !current.imagen_path);
@@ -1346,7 +1789,9 @@ function seoLeer(){ const o = {}; Object.entries(SEO_K).forEach(([k, id]) => { c
 function seoCargar(p){ const s = (p && p.seo) || {}; Object.entries(SEO_K).forEach(([k, id]) => { $(id).value = s[k] || ""; }); seoToggle(); seoPintar(); }
 function seoToggle(){ $("seo-box").classList.toggle("hidden", $("e-tipo").value !== "Blog"); }
 function seoPintar(){
-  const s = seoLeer(), h1 = $("e-copy").value.trim(), body = $("e-caption").value, kw = (s.kw || "").toLowerCase();
+  const cuerpo = esBlogEd() ? blLeer(blDoc) : [];
+  const s = seoLeer(), h1 = $("e-copy").value.trim(), body = esBlogEd() ? blTexto(cuerpo) : $("e-caption").value, kw = (s.kw || "").toLowerCase();
+  const subt = cuerpo.filter(b => b.t === "h"), fotos = cuerpo.filter(b => b.t === "img").flatMap(b => b.imgs || []);
   const t = s.titulo || h1 || "Título del artículo", d = s.desc || body.slice(0, 155) || "Meta descripción…";
   $("seo-t-c").textContent = `${(s.titulo || "").length}/60`; $("seo-t-c").className = "cnt" + ((s.titulo || "").length > 60 ? " mal" : "");
   $("seo-d-c").textContent = `${(s.desc || "").length}/155`; $("seo-d-c").className = "cnt" + ((s.desc || "").length > 160 ? " mal" : "");
@@ -1357,13 +1802,18 @@ function seoPintar(){
   const checks = [
     [!!s.kw, "Tiene palabra clave principal"],
     [has(s.titulo), "La palabra clave está en el título SEO"],
-    [has(h1), "La palabra clave está en el H1 (Copy)"],
+    [has(h1), "La palabra clave está en el título (H1)"],
     [has(s.desc), "La palabra clave está en la meta descripción"],
     [kw && (s.slug || "").includes(slugify(kw)), "La palabra clave está en la URL"],
     [has(body.slice(0, 600)), "La palabra clave aparece al inicio del texto"],
     [(s.titulo || "").length >= 30 && (s.titulo || "").length <= 60, "Título SEO entre 30 y 60 caracteres"],
     [(s.desc || "").length >= 120 && (s.desc || "").length <= 160, "Meta descripción entre 120 y 160 caracteres"],
     [pals >= 600, `Texto de al menos 600 palabras (lleva ${pals})`],
+    [subt.filter(b => b.n === 2).length >= 2, `Tiene al menos 2 subtítulos H2 (lleva ${subt.filter(b => b.n === 2).length})`],
+    [!subt.some(b => b.n === 1), "Un solo H1: el título (sin otro H1 dentro del texto)"],
+    [subt.some(b => has(blPlano(b.x))), "La palabra clave aparece en algún subtítulo"],
+    [fotos.length > 0, `Tiene imágenes dentro del texto (lleva ${fotos.length})`],
+    [fotos.length > 0 && fotos.every(f => (f.alt || "").trim()), "Todas las imágenes del texto tienen texto alternativo"],
     [!!s.cat, "Tiene categoría"], [!!s.tags, "Tiene etiquetas (TAGS)"], [!!s.alt, "La imagen destacada tiene texto alternativo"],
   ];
   $("seo-chk").innerHTML = checks.map(([ok, t]) => `<li class="${ok ? "ok" : ""}">${ok ? "✓" : "○"} ${esc(t)}</li>`).join("") + `<li class="info">⏱ ${minLectura(body)} min de lectura · ${pals} palabras</li>`;

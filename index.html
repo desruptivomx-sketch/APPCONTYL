@@ -21,7 +21,7 @@
 <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@400;600&family=Nunito+Sans:wght@400;600;700&display=swap" rel="stylesheet">
 <link rel="preload" href="fonts/the-seasons-regular.woff2" as="font" type="font/woff2" crossorigin>
 <link rel="preload" href="fonts/gotham-rounded-light.woff2" as="font" type="font/woff2" crossorigin>
-<link rel="stylesheet" href="styles.css?v=46">
+<link rel="stylesheet" href="styles.css?v=47">
 <link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@1,600&family=Montserrat:wght@500;600&family=Playfair+Display:wght@400&family=Raleway:wght@300;400;700&display=swap">
 </head>
@@ -258,8 +258,11 @@
       <label for="e-status">Status<select id="e-status"></select><span class="e-tomado" id="e-tomado"></span></label>
       <label for="e-cumplio">¿Cumplió?<select id="e-cumplio"></select></label>
     </div>
-    <label for="e-copy">Copy<textarea id="e-copy" rows="3"></textarea></label>
-    <label for="e-caption">Caption<textarea id="e-caption" rows="7"></textarea></label>
+    <label for="e-copy"><span id="e-copy-l">Copy</span><textarea id="e-copy" rows="3"></textarea></label>
+    <label for="e-caption" id="e-caption-w">Caption<textarea id="e-caption" rows="7"></textarea></label>
+    <!-- Blog: el artículo se escribe sobre la página (panel derecho); en celular el editor se coloca aquí -->
+    <p class="note bl-nota" id="bl-nota">✍️ El artículo se escribe a la derecha, sobre la página: ahí están los títulos, las imágenes y los botones.</p>
+    <div class="bl-movil" id="bl-movil"></div>
     <div class="ia" id="ia">
       <div class="ia-head"><span class="ia-t">✨ Asistente de IA</span><label class="ia-lang">Idioma <select id="ia-lang"><option value="en">Inglés</option><option value="es">Español</option></select></label></div>
       <div class="ia-btns">
@@ -272,7 +275,7 @@
       <div class="ia-out" id="ia-out" aria-live="polite"></div>
     </div>
     <section class="seo hidden" id="seo-box" aria-label="SEO del blog">
-      <div class="seo-head"><span class="ia-t">🔎 SEO del artículo <button type="button" class="btn ghost small seo-ver" id="seo-ver">👁 Ver como en la web</button></span><span class="note">Como en yucatanlove.com · el Copy es el H1 y el Caption es el texto</span></div>
+      <div class="seo-head"><span class="ia-t">🔎 SEO del artículo <button type="button" class="btn ghost small seo-ver" id="seo-ver">👁 Ver como en la web</button></span><span class="note">Como en yucatanlove.com · el título es el H1 y el texto se escribe sobre la página</span></div>
       <div class="seo-g" id="seo-preview" aria-hidden="true"></div>
       <label>Título SEO <span class="cnt" id="seo-t-c"></span><input id="seo-titulo" maxlength="90" placeholder="Ej. Mayan Wedding Ceremony in Yucatán | Traditions & Guide"></label>
       <label>Meta descripción <span class="cnt" id="seo-d-c"></span><textarea id="seo-desc" rows="2" maxlength="200" placeholder="Explore the Mayan wedding ceremony in Yucatán—its rituals…"></textarea></label>
@@ -286,6 +289,16 @@
       <label>Texto alternativo de la imagen destacada<input id="seo-alt" maxlength="125" placeholder="Couple during a Mayan wedding ceremony in a Yucatán cenote"></label>
       <ul class="seo-chk" id="seo-chk"></ul>
       <datalist id="seo-cats"><option>Wedding Planner</option><option>Wedding Planning</option><option>Wedding Ceremony</option><option>Wellness</option><option>Make Up</option><option>Hairstyle</option><option>Ideas &amp; Tips</option><option>Destination Wedding</option><option>Hacienda Wedding</option><option>Beach Wedding</option><option>Cenote Wedding</option><option>Religious Wedding</option><option>Legal Wedding</option><option>Symbolic Wedding</option><option>Catering</option><option>Favor</option><option>Bridal and Groom's Wear</option><option>Jewelry and Accessories</option><option>Guest</option><option>Bridesmaids</option><option>Groomsmen</option></datalist>
+          <div class="wp-box" id="wp-box">
+        <span class="ia-t">🚀 Pasarlo a WordPress</span>
+        <div class="actions">
+          <button type="button" class="btn ghost small" id="wp-copiar">Copiar artículo con formato</button>
+          <button type="button" class="btn ghost small" id="wp-fotos">Descargar sus fotos</button>
+          <button type="button" class="btn small hidden" id="wp-enviar">Enviar a WordPress como borrador</button>
+        </div>
+        <p class="note status-line" id="wp-msg" role="status"></p>
+        <p class="note" id="wp-estado"></p>
+      </div>
     </section>
     <label for="e-inspo">Inspo / Referencia<textarea id="e-inspo" rows="2" placeholder="Pega uno o varios enlaces"></textarea></label>
     <div class="lnks" id="e-inspo-links"></div>
@@ -308,7 +321,37 @@
   </div>
   <section class="ed-prev" id="ed-prev" aria-label="Vista previa del artículo">
     <div class="ed-prev-bar"><span class="ed-dots"><i></i><i></i><i></i></span><span class="ed-prev-url" id="ed-prev-url"></span><button type="button" class="btn ghost small" id="ed-prev-full">Abrir completo ↗</button></div>
+    <!-- Barra de formato del artículo (se queda fija arriba de la página) -->
+    <div class="bl-tools" id="bl-tools" role="toolbar" aria-label="Formato del artículo">
+      <span class="bl-g" aria-label="Estilo del texto">
+        <button type="button" data-bl="p" title="Texto normal">Párrafo</button>
+        <button type="button" data-bl="h1" title="Título 1 (H1)">H1</button>
+        <button type="button" data-bl="h2" title="Título 2 (H2): secciones del artículo">H2</button>
+        <button type="button" data-bl="h3" title="Título 3 (H3): subsecciones">H3</button>
+        <button type="button" data-bl="h4" title="Título 4 (H4)">H4</button>
+        <button type="button" data-bl="cita" title="Cita destacada">❝ Cita</button>
+      </span>
+      <span class="bl-g">
+        <button type="button" data-bl="b" title="Negritas (Ctrl/⌘ + B)"><b>B</b></button>
+        <button type="button" data-bl="i" title="Cursiva (Ctrl/⌘ + I)"><i>I</i></button>
+        <button type="button" data-bl="a" title="Poner o quitar un enlace en el texto seleccionado">🔗 Enlace</button>
+      </span>
+      <span class="bl-g">
+        <button type="button" data-bl="ul" title="Lista con viñetas">• Lista</button>
+        <button type="button" data-bl="ol" title="Lista numerada">1. Lista</button>
+      </span>
+      <span class="bl-g">
+        <button type="button" data-bl="img" title="Insertar una imagen, o varias en fila, donde está el cursor">🖼 Imagen</button>
+        <button type="button" data-bl="btn" title="Insertar un botón con enlace">▭ Botón</button>
+        <button type="button" data-bl="hr" title="Insertar una línea separadora">— Línea</button>
+      </span>
+      <span class="bl-aviso" id="bl-aviso" role="status"></span>
+    </div>
+    <!-- Opciones de lo que esté seleccionado (imagen, botón, enlace) -->
+    <div class="bl-ctx hidden" id="bl-ctx"></div>
     <div class="ed-prev-page" id="ed-prev-page"></div>
+    <div class="bl-doc" id="bl-doc" contenteditable="true" role="textbox" aria-multiline="true" aria-label="Texto del artículo" data-ph="Empieza a escribir tu artículo aquí… Usa la barra de arriba para títulos, imágenes y botones."></div>
+    <input type="file" id="bl-file" accept="image/*" multiple class="hidden">
   </section>
 </aside>
 
@@ -404,7 +447,7 @@
 
 <div id="print-area" aria-hidden="true"></div>
 <script src="lib/supabase.js"></script>
-<script src="config.js?v=46"></script>
-<script src="app.js?v=46"></script>
+<script src="config.js?v=47"></script>
+<script src="app.js?v=47"></script>
 </body>
 </html>
