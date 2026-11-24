@@ -635,19 +635,32 @@ function renderPlataforma(){
 
   if (plat === "facebook") {
     const portada = list.find(p => p.imagen_path), cover = urlOf(Pp.portada_path);
-    const fotos = (p) => { const s = slidesOf(p); if (s.length < 2) return `<div class="fb-media">${img(p) ? `<img src="${esc(full(p))}" alt="" loading="lazy">` : ph(p)}</div>`;
-      const vis = s.slice(0, 4); return `<div class="fb-media fb-m${Math.min(s.length, 4)}">${vis.map((x, i) => `<div><img src="${esc(thumbUrl(x))}" alt="" loading="lazy">${i === 3 && s.length > 4 ? `<span class="fb-more">+${s.length - 4}</span>` : ""}</div>`).join("")}</div>`; };
-    html = `<div class="fb">
-      ${editar}<div class="fb-top"><div class="fb-cover">${cover ? `<img src="${esc(cover)}" alt="">` : portada ? `<img src="${esc(full(portada))}" alt="">` : `<div class="fb-cover-ph"><img src="icons/logo-arena-texto.png" alt=""></div>`}</div>
-        <div class="fb-id">${av("fb-av")}<div class="fb-name"><h3>${D("nombre", "YUC'ATÅLOVE")}</h3><span><b>${D("extra")}</b> Me gusta · <b>${D("seguidores")}</b> seguidores</span></div>
-          <div class="fb-btns"><span class="fb-like">${I.like} Me gusta</span><span class="fb-msg">${I.com} Mensaje</span></div></div>
-        <div class="fb-tabs"><span class="on">Publicaciones</span><span>Información</span><span>Menciones</span><span>Opiniones</span><span>Seguidores</span><span>Fotos</span><span>Más ▾</span></div></div>
-      <div class="fb-body"><aside class="fb-intro"><h4>Detalles</h4>${Pp.bio ? `<p>${esc(Pp.bio)}</p>` : ""}<ul>${Pp.categoria ? `<li>ℹ️ Página · ${esc(Pp.categoria)}</li>` : ""}${Pp.ubicacion ? `<li>📍 ${esc(Pp.ubicacion)}</li>` : ""}${Pp.link ? `<li>🔗 ${esc(linkTxt(Pp.link))}</li>` : ""}</ul></aside>
-        <div class="fb-feed">${list.length ? list.map(p => `<button type="button" class="fb-post" data-id="${p.id}">
-          <div class="fb-ph">${av("fb-av-s")}<div><b>${D("nombre", "YUC'ATÅLOVE")}</b><span>${esc(fmtCorto(p.fecha) || "sin fecha")} · 🌐</span></div>${chipSt(p)}<i>${I.dots}</i></div>
-          ${(p.caption || p.copy) ? `<div class="fb-text"><p>${esc(p.caption || p.copy)}</p></div>` : ""}${fotos(p)}
-          <div class="fb-reac"><span>👍❤️ —</span><span>— comentarios · — veces compartido</span></div>
-          <div class="fb-acts"><span>${I.like} Me gusta</span><span>${I.com} Comentar</span><span>${I.share} Compartir</span></div></button>`).join("") : vacio}</div></div></div>`;
+    const MESES_L = ["enero","febrero","marzo","abril","mayo","junio","julio","agosto","septiembre","octubre","noviembre","diciembre"];
+    const fechaFb = f => { if (!f) return "sin fecha"; const [y, m, d] = f.split("-").map(Number); return `${d} de ${MESES_L[m - 1]}${y !== new Date().getFullYear() ? " de " + y : ""}`; };
+    const im = x => `<img src="${esc(thumbUrl(x))}" alt="" loading="lazy">`;
+    // Mosaico como Facebook: 2 = lado a lado · 3 = una arriba y dos abajo · 4 = 2×2 · 5+ = dos arriba, tres abajo y "+N"
+    const fotos = p => { const s = slidesOf(p), n = s.length;
+      if (n < 2) return `<div class="fb-media">${img(p) ? `<img src="${esc(full(p))}" alt="" loading="lazy">` : ph(p)}</div>`;
+      if (n === 2) return `<div class="fb-mos fb-n2">${s.map(x => `<div>${im(x)}</div>`).join("")}</div>`;
+      if (n === 3) return `<div class="fb-mos fb-n3">${s.map(x => `<div>${im(x)}</div>`).join("")}</div>`;
+      if (n === 4) return `<div class="fb-mos fb-n4">${s.map(x => `<div>${im(x)}</div>`).join("")}</div>`;
+      return `<div class="fb-mos fb-n5"><div class="fb-r2">${s.slice(0, 2).map(x => `<div>${im(x)}</div>`).join("")}</div><div class="fb-r3">${s.slice(2, 5).map((x, i) => `<div>${im(x)}${i === 2 && n > 5 ? `<span class="fb-more">+${n - 5}</span>` : ""}</div>`).join("")}</div></div>`; };
+    const sub = [Pp.categoria ? `💼 ${esc(Pp.categoria)}` : "", Pp.precio ? esc(Pp.precio) : "", Pp.telefono ? `📞 ${esc(Pp.telefono)}` : ""].filter(Boolean).join(" · ");
+    const avFb = cls => `<span class="fb-ring ${cls}">${av("")}<i class="fb-on"></i></span>`;
+    html = `${editar}<div class="fb">
+      <div class="fb-top"><div class="fb-cover">${cover ? `<img src="${esc(cover)}" alt="">` : portada ? `<img src="${esc(full(portada))}" alt="">` : `<div class="fb-cover-ph"><img src="icons/logo-arena-texto.png" alt=""></div>`}</div>
+        <div class="fb-id">${avFb("fb-av")}
+          <div class="fb-name"><h3>${D("nombre", "YucataLove")}</h3><div class="fb-cnt"><b>${D("seguidores")} seguidores</b> · <b>${D("extra")} reacciones</b></div>
+            ${Pp.bio ? `<p class="fb-bio">${esc(Pp.bio)}</p>` : ""}${sub ? `<div class="fb-sub">${sub}</div>` : ""}</div>
+          <div class="fb-btns"><span class="fb-like">${I.com} Mensaje</span><span class="fb-msg">${I.save} Seguir</span><span class="fb-msg">🔍 Buscar</span></div></div>
+        <div class="fb-tabs"><span class="on">Todo</span><span>Información</span><span>Reels</span><span>Fotos</span><span>Seguidores</span><span>Más ▾</span><i class="fb-tdots">${I.dots}</i></div></div>
+      <div class="fb-body"><aside class="fb-intro"><h4>Detalles</h4>${Pp.bio ? `<p>${esc(Pp.bio)}</p>` : ""}<ul>${Pp.categoria ? `<li>💼 Página · ${esc(Pp.categoria)}</li>` : ""}${Pp.telefono ? `<li>📞 ${esc(Pp.telefono)}</li>` : ""}${Pp.ubicacion ? `<li>📍 ${esc(Pp.ubicacion)}</li>` : ""}${Pp.link ? `<li>🔗 ${esc(linkTxt(Pp.link))}</li>` : ""}${Pp.precio ? `<li>💲 Rango de precios · ${esc(Pp.precio)}</li>` : ""}</ul></aside>
+        <div class="fb-feed">${list.length ? list.map(p => { const txt = p.caption || p.copy || ""; const largo = txt.length > 220 || txt.split("\n").length > 3;
+          return `<button type="button" class="fb-post" data-id="${p.id}">
+          <div class="fb-ph">${avFb("fb-av-s")}<div><b>${D("nombre", "YucataLove")}</b><span>${esc(fechaFb(p.fecha))} · 🌐</span></div>${chipSt(p)}<i>${I.dots}</i></div>
+          ${txt ? `<div class="fb-text"><p>${esc(largo ? txt.slice(0, 200).replace(/\s+\S*$/, "") : txt)}${largo ? ` … <b>Ver más</b>` : ""}</p></div>` : ""}${fotos(p)}
+          <div class="fb-promo"><span>📣 Promociona esta publicación para aumentar el alcance de tu página</span><span class="fb-pbtn">Promocionar publicación</span></div>
+          <div class="fb-acts"><span>${I.like} Me gusta</span><span>${I.com} Comentar</span><span>${I.share} Compartir</span></div></button>`; }).join("") : vacio}</div></div></div>`;
   }
 
   if (plat === "pauta") html = `${editar}<div class="ad-feed">${list.length ? list.map(p => { const n = slidesOf(p).length; return `<button type="button" class="ig-ad" data-id="${p.id}">
@@ -762,7 +775,7 @@ const PF_CAMPOS = {
   instagram: { campos: ["usuario","categoria","bio","link","seguidores","seguidos","extra"], extra: "Publicaciones (vacío = las del plan)" },
   tiktok:    { campos: ["usuario","bio","link","seguidores","seguidos","extra"], extra: "Me gusta (total)" },
   pinterest: { campos: ["usuario","bio","link","seguidores","seguidos","extra"], extra: "Visualizaciones mensuales" },
-  facebook:  { campos: ["categoria","ubicacion","bio","link","seguidores","extra"], extra: "Me gusta de la página", portada: true },
+  facebook:  { campos: ["categoria","precio","telefono","ubicacion","bio","link","seguidores","extra"], extra: "Reacciones", portada: true },
   pauta:     { campos: ["link","extra"], extra: "Botón del anuncio (ej. Más información)", sinFoto: true, nota: "Los anuncios usan la foto y el usuario de Instagram." },
   blog:      { campos: ["bio","categoria","link"], bio: "Título de la sección (ej. Start your wedding planning)", foto: "Logo del blog" },
 };
@@ -770,7 +783,7 @@ let pfPlat = "", pfFile = null, pfFile2 = null, pfUrl = "", pfUrl2 = "";
 function abrirEditorPerfil(k){
   pfPlat = k; pfFile = pfFile2 = null; const P = pf(k), C = PF_CAMPOS[k] || PF_CAMPOS.instagram;
   $("pfm-t").textContent = "Editar perfil de " + PLATS[k].n;
-  ["nombre","usuario","categoria","ubicacion","bio","link","seguidores","seguidos","extra"].forEach(c => { $("pf-" + c).value = P[c] || ""; });
+  ["nombre","usuario","categoria","ubicacion","bio","link","seguidores","seguidos","extra","precio","telefono"].forEach(c => { $("pf-" + c).value = P[c] || ""; });
   document.querySelectorAll("#pfm-form [data-pf]").forEach(l => l.classList.toggle("hidden", !C.campos.includes(l.dataset.pf)));
   $("pf-extra-l").textContent = C.extra || "Extra";
   document.querySelector('#pfm-form [data-pf="categoria"]').firstChild.textContent = k === "blog" ? "Descripción de la sección" : "Categoría"; $("pf-bio-l").textContent = C.bio || "Presentación / bio";
@@ -801,7 +814,7 @@ $("pfm-form").addEventListener("submit", async e => {
   const btn = $("pfm-save"); btn.disabled = true; const msg = t => $("pfm-msg").textContent = t;
   try {
     const row = { plataforma: pfPlat, updated_at: new Date().toISOString() };
-    ["nombre","usuario","categoria","ubicacion","bio","link","seguidores","seguidos","extra"].forEach(c => { row[c] = $("pf-" + c).value.trim() || null; });
+    const C = PF_CAMPOS[pfPlat] || {}; ["nombre","usuario","categoria","ubicacion","bio","link","seguidores","seguidos","extra","precio","telefono"].forEach(c => { if (c === "nombre" || (C.campos || []).includes(c)) row[c] = $("pf-" + c).value.trim() || null; });
     if (row.usuario) row.usuario = row.usuario.replace(/^@/, "");
     const viejas = [];
     if (pfFile) { msg("Subiendo foto…"); const p = await uploadImage(pfFile, "perfiles"); if (pf(pfPlat).foto_path) viejas.push(pf(pfPlat).foto_path); row.foto_path = p; }
