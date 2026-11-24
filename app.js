@@ -524,28 +524,88 @@ $("plat-menu").addEventListener("click", e => {
 });
 document.addEventListener("click", e => { if (!$("plat-menu").classList.contains("hidden") && !e.target.closest("#plat-menu, #plat-btn, #tab-feed")) cerrarMenuPlat(); });
 document.addEventListener("keydown", e => { if (e.key === "Escape" && !$("plat-menu").classList.contains("hidden")) cerrarMenuPlat(); });
-window.addEventListener("resize", cerrarMenuPlat);
+let pnCols = 0;
+window.addEventListener("resize", () => { cerrarMenuPlat(); const c = innerWidth >= 1000 ? 5 : innerWidth >= 700 ? 4 : 2; if (view === "feed" && plat === "pinterest" && c !== pnCols) renderFeed(); pnCols = c; });
 
 function renderPlataforma(){
   const P = PLATS[plat], list = feedList().filter(P.filtro).sort((a, b) => String(a.fecha || "9999").localeCompare(String(b.fecha || "9999")));
   const v = $("plat-view"); v.className = "plat-view pv-" + plat;
-  if (!list.length) { v.innerHTML = `<div class="empty-state">${esc(P.vacio)}</div>`; return; }
   const img = p => thumbUrl(p.imagen_path);
-  const chipSt = p => { const st = p.status || ""; if (!st) return ""; const sc = colorDe("status", st) || "#F6F6F4"; return `<span class="chip" style="background:${sc};color:${textOn(sc)}">${esc(st)}</span>`; };
+  const full = p => urlOf(p.imagen_path) || thumbUrl(p.imagen_path);
+  const chipSt = p => { const st = p.status || ""; if (!st) return ""; const sc = colorDe("status", st) || "#F6F6F4"; return `<span class="chip st" style="background:${sc};color:${textOn(sc)}">${esc(st)}</span>`; };
   const ph = p => `<div class="ph"><div class="label-sm">${esc(p.pilar || "")}</div><div class="t">${esc(p.copy || p.tipo || "Post")}</div><div class="u">Sin imagen</div></div>`;
+  const media = (p, cls = "") => img(p) ? `<img class="${cls}" src="${esc(img(p))}" alt="" loading="lazy">` : ph(p);
   const titulo = p => p.copy || String(p.caption || "").split("\n")[0] || "Sin título";
-  const fbHead = (extra) => `<div class="fb-h"><span class="sv-av"><img src="icons/simbolo-arena.png" alt=""></span><div><b>YUC'ATÅLOVE</b><span>${extra}</span></div></div>`;
+  const av = (cls = "") => `<span class="pf-av ${cls}"><img src="icons/simbolo-arena.png" alt=""></span>`;
+  const vacio = `<div class="empty-state">${esc(P.vacio)}</div>`;
+  const I = {
+    grid: '<svg viewBox="0 0 24 24"><path d="M4 4h16v16H4zM4 9.3h16M4 14.6h16M9.3 4v16M14.6 4v16"/></svg>',
+    lock: '<svg viewBox="0 0 24 24"><rect x="5" y="11" width="14" height="9" rx="2"/><path d="M8 11V8a4 4 0 0 1 8 0v3"/></svg>',
+    heart: '<svg viewBox="0 0 24 24"><path d="M12 20s-7-4.4-7-10a4 4 0 0 1 7-2.6A4 4 0 0 1 19 10c0 5.6-7 10-7 10z"/></svg>',
+    com: '<svg viewBox="0 0 24 24"><path d="M20 12a8 8 0 0 1-11.6 7.1L4 20l1-4.2A8 8 0 1 1 20 12z"/></svg>',
+    send: '<svg viewBox="0 0 24 24"><path d="M21 3 10 14M21 3l-7 18-4-7-7-4z"/></svg>',
+    save: '<svg viewBox="0 0 24 24"><path d="M6 3h12v18l-6-5-6 5z"/></svg>',
+    like: '<svg viewBox="0 0 24 24"><path d="M7 21H4V10h3zM7 10l4-7c1.7 0 2.5 1 2.2 2.6L12.6 9H19a2 2 0 0 1 2 2.3l-1.2 7.4A2.6 2.6 0 0 1 17.2 21H7"/></svg>',
+    share: '<svg viewBox="0 0 24 24"><path d="M14 5l7 7-7 7v-4c-5 0-8 1.5-11 5 1-5.5 4-10 11-11z"/></svg>',
+    dots: '<svg viewBox="0 0 24 24"><circle cx="5" cy="12" r="1.3" fill="currentColor"/><circle cx="12" cy="12" r="1.3" fill="currentColor"/><circle cx="19" cy="12" r="1.3" fill="currentColor"/></svg>',
+    play: '<svg viewBox="0 0 24 24"><path d="M7 4v16l13-8z"/></svg>',
+  };
   let html = "";
-  if (plat === "tiktok") html = `<div class="tt-grid">${list.map(p => `<button type="button" class="tt-tile" data-id="${p.id}">${img(p) ? `<img src="${esc(img(p))}" alt="" loading="lazy">` : ph(p)}<span class="tt-play">▶</span><div class="meta"><span class="chip date">${fmtCorto(p.fecha)}</span>${chipSt(p)}</div></button>`).join("")}</div>`;
-  if (plat === "pinterest") html = `<div class="pin-grid">${list.map(p => `<button type="button" class="pin" data-id="${p.id}"><div class="pin-img">${img(p) ? `<img src="${esc(img(p))}" alt="" loading="lazy">` : ph(p)}</div><b>${esc(titulo(p))}</b><div class="meta"><span class="chip date">${fmtCorto(p.fecha)}</span>${chipSt(p)}</div></button>`).join("")}</div>`;
-  if (plat === "facebook" || plat === "pauta") html = `<div class="fb-list">${list.map(p => {
-      const n = slidesOf(p).length;
-      return `<button type="button" class="fb-card" data-id="${p.id}">${fbHead(plat === "pauta" ? "Publicidad" : (fmtCorto(p.fecha) || "sin fecha") + " · 🌐")}
-        <p class="fb-cap">${esc(p.caption || p.copy || "Sin caption")}</p>
-        <div class="fb-img">${img(p) ? `<img src="${esc(img(p))}" alt="" loading="lazy">` : ph(p)}${n > 1 ? `<span class="tile-n">1/${n}</span>` : ""}</div>
-        ${plat === "pauta" ? `<div class="ad-cta"><span>yucatalove.com</span><span class="btn small">Más información</span></div>` : `<div class="fb-acts"><span>👍 Me gusta</span><span>💬 Comentar</span><span>↗ Compartir</span></div>`}
-        <div class="meta">${plat === "pauta" ? `<span class="chip date">${fmtCorto(p.fecha) || "sin fecha"}</span>` : ""}${chipSt(p)}<span class="chip date">${esc(p.tipo || "")}</span></div></button>`; }).join("")}</div>`;
-  if (plat === "blog") html = `<div class="blog-list">${list.map(p => `<button type="button" class="blog-card" data-id="${p.id}"><div class="blog-img">${img(p) ? `<img src="${esc(img(p))}" alt="" loading="lazy">` : ph(p)}</div><div class="blog-body"><span class="label-sm">${esc(p.pilar || "Blog")} · ${fmtCorto(p.fecha) || "sin fecha"}</span><h3>${esc(titulo(p))}</h3><p>${esc(String(p.caption || "").slice(0, 180))}${String(p.caption || "").length > 180 ? "…" : ""}</p><div class="meta">${chipSt(p)}</div></div></button>`).join("")}</div>`;
+
+  if (plat === "tiktok") html = `<div class="tt">
+      <div class="tt-prof">${av("tt-av")}<h3>yucatalove</h3><div class="tt-user">YUC'ATÅLOVE</div>
+        <div class="tt-stats"><span><b>—</b> Siguiendo</span><span><b>—</b> Seguidores</span><span><b>—</b> Me gusta</span></div>
+        <div class="tt-btns"><span class="tt-follow">Seguir</span><span class="tt-msg">Mensaje</span></div>
+        <p class="tt-bio">Destination weddings in Yucatán 🤍 Together as one</p><span class="tt-link">🔗 yucatalove.com</span></div>
+      <div class="tt-tabs"><span class="on">${I.grid}</span><span>${I.lock}</span><span>${I.heart}</span></div>
+      ${list.length ? `<div class="tt-grid">${list.map(p => `<button type="button" class="tt-tile" data-id="${p.id}">${media(p)}${chipSt(p)}<span class="tt-views">${I.play}${esc(fmtCorto(p.fecha) || "sin fecha")}</span></button>`).join("")}</div>` : vacio}</div>`;
+
+  if (plat === "pinterest") html = `<div class="pn">
+      <div class="pn-prof">${av("pn-av")}<h3>YUC'ATÅLOVE</h3>
+        <div class="pn-user"><span class="pn-p">P</span> yucatalove · <u>yucatalove.com</u></div>
+        <p class="pn-bio">Destination weddings in Yucatán · Together as one</p>
+        <div class="pn-stats"><b>—</b> seguidores · <b>—</b> seguidos</div>
+        <div class="pn-btns"><span class="pn-share">Compartir</span><span class="pn-follow">Seguir</span></div></div>
+      <div class="pn-tabs"><span class="on">Creados</span><span>Guardados</span></div>
+      ${list.length ? (() => { const cols = innerWidth >= 1000 ? 5 : innerWidth >= 700 ? 4 : 2, C = Array.from({ length: cols }, () => []);
+        list.forEach((p, i) => C[i % cols].push(`<button type="button" class="pn-pin" data-id="${p.id}"><div class="pn-img">${media(p)}${chipSt(p)}<span class="pn-save">Guardar</span></div><div class="pn-t"><b>${esc(titulo(p))}</b><span>${I.dots}</span></div></button>`));
+        return `<div class="pn-grid">${C.map(c => `<div class="pn-col">${c.join("")}</div>`).join("")}</div>`; })() : vacio}</div>`;
+
+  if (plat === "facebook") {
+    const portada = list.find(p => p.imagen_path);
+    const fotos = (p) => { const s = slidesOf(p); if (s.length < 2) return `<div class="fb-media">${img(p) ? `<img src="${esc(full(p))}" alt="" loading="lazy">` : ph(p)}</div>`;
+      const vis = s.slice(0, 4); return `<div class="fb-media fb-m${Math.min(s.length, 4)}">${vis.map((x, i) => `<div><img src="${esc(thumbUrl(x))}" alt="" loading="lazy">${i === 3 && s.length > 4 ? `<span class="fb-more">+${s.length - 4}</span>` : ""}</div>`).join("")}</div>`; };
+    html = `<div class="fb">
+      <div class="fb-top"><div class="fb-cover">${portada ? `<img src="${esc(full(portada))}" alt="">` : `<div class="fb-cover-ph"><img src="icons/logo-arena-texto.png" alt=""></div>`}</div>
+        <div class="fb-id">${av("fb-av")}<div class="fb-name"><h3>YUC'ATÅLOVE</h3><span><b>—</b> Me gusta · <b>—</b> seguidores</span></div>
+          <div class="fb-btns"><span class="fb-like">${I.like} Me gusta</span><span class="fb-msg">${I.com} Mensaje</span></div></div>
+        <div class="fb-tabs"><span class="on">Publicaciones</span><span>Información</span><span>Menciones</span><span>Opiniones</span><span>Seguidores</span><span>Fotos</span><span>Más ▾</span></div></div>
+      <div class="fb-body"><aside class="fb-intro"><h4>Detalles</h4><p>Destination weddings in Yucatán · Together as one</p><ul><li>ℹ️ Página · Organizador de bodas</li><li>📍 Mérida, Yucatán, México</li><li>🔗 yucatalove.com</li></ul></aside>
+        <div class="fb-feed">${list.length ? list.map(p => `<button type="button" class="fb-post" data-id="${p.id}">
+          <div class="fb-ph">${av("fb-av-s")}<div><b>YUC'ATÅLOVE</b><span>${esc(fmtCorto(p.fecha) || "sin fecha")} · 🌐</span></div>${chipSt(p)}<i>${I.dots}</i></div>
+          ${(p.caption || p.copy) ? `<div class="fb-text"><p>${esc(p.caption || p.copy)}</p></div>` : ""}${fotos(p)}
+          <div class="fb-reac"><span>👍❤️ —</span><span>— comentarios · — veces compartido</span></div>
+          <div class="fb-acts"><span>${I.like} Me gusta</span><span>${I.com} Comentar</span><span>${I.share} Compartir</span></div></button>`).join("") : vacio}</div></div></div>`;
+  }
+
+  if (plat === "pauta") html = `<div class="ad-feed">${list.length ? list.map(p => { const n = slidesOf(p).length; return `<button type="button" class="ig-ad" data-id="${p.id}">
+      <div class="ig-h">${av("ig-av")}<div><b>yucatalove</b><span>Publicidad</span></div>${chipSt(p)}<i>${I.dots}</i></div>
+      <div class="ig-media">${img(p) ? `<img src="${esc(full(p))}" alt="" loading="lazy">` : ph(p)}${n > 1 ? `<span class="tile-n">1/${n}</span>` : ""}</div>
+      <div class="ig-cta"><span>Más información</span><span>›</span></div>
+      <div class="ig-icons"><span>${I.heart}${I.com}${I.send}</span><span>${I.save}</span></div>
+      <p class="ig-cap"><b>yucatalove</b> ${esc(p.caption || p.copy || "")}</p>
+      <span class="ig-date">${esc(fmtCorto(p.fecha) || "sin fecha")}</span></button>`; }).join("") : vacio}</div>`;
+
+  if (plat === "blog") {
+    const [dest, ...resto] = list;
+    const meta = p => `<span class="bl-cat">${esc(p.pilar || "Blog")}</span>`;
+    const ext = p => { const c = String(p.caption || ""); return esc(c.slice(0, 170)) + (c.length > 170 ? "…" : ""); };
+    html = `<div class="bl">
+      <header class="bl-head"><img src="icons/logo-color-texto.png" alt="YUC'ATÅLOVE"><nav><span>Weddings</span><span>Haciendas</span><span>Wedding weekend</span><span class="on">Journal</span><span>Contact</span></nav></header>
+      <div class="bl-hero"><span class="label-sm">Journal</span><h2>Stories from Yucatán</h2></div>
+      ${dest ? `<button type="button" class="bl-dest" data-id="${dest.id}"><div class="bl-img">${img(dest) ? `<img src="${esc(full(dest))}" alt="">` : ph(dest)}</div><div class="bl-txt">${meta(dest)}<h3>${esc(titulo(dest))}</h3><p>${ext(dest)}</p><span class="bl-more">Leer artículo →</span><span class="bl-date">${esc(fmtCorto(dest.fecha) || "sin fecha")} ${chipSt(dest)}</span></div></button>` : vacio}
+      ${resto.length ? `<div class="bl-grid">${resto.map(p => `<button type="button" class="bl-card" data-id="${p.id}"><div class="bl-img">${media(p)}</div>${meta(p)}<h3>${esc(titulo(p))}</h3><p>${ext(p)}</p><span class="bl-date">${esc(fmtCorto(p.fecha) || "sin fecha")} ${chipSt(p)}</span></button>`).join("")}</div>` : ""}</div>`;
+  }
   v.innerHTML = html;
 }
 $("plat-view").addEventListener("click", e => { const t = e.target.closest("[data-id]"); if (!t) return; const p = posts.find(x => x.id === t.dataset.id); if (p) abrirPublicar(p); });
@@ -553,7 +613,7 @@ $("plat-view").addEventListener("click", e => { const t = e.target.closest("[dat
 function renderFeed(){
   const P = PLATS[plat], esIG = plat === "instagram";
   $("plat-name").textContent = P.n; $("prof-bio").textContent = P.bio;
-  $("ig-view").classList.toggle("hidden", !esIG); $("ig-stats").classList.toggle("hidden", !esIG); $("btn-sort").classList.toggle("hidden", !esIG);
+  $("ig-view").classList.toggle("hidden", !esIG); $("ig-stats").classList.toggle("hidden", !esIG); $("ig-profile").classList.toggle("hidden", !esIG); $("btn-sort").classList.toggle("hidden", !esIG);
   $("plat-view").classList.toggle("hidden", esIG);
   if (!esIG) { renderPlataforma(); return; }
   const list = feedList();
