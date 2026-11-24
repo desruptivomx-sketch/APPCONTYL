@@ -751,3 +751,84 @@ body.sv-open{overflow:hidden}
 }
 @media (max-width:760px){.igp-stats{flex-wrap:nowrap;gap:12px;justify-content:space-between}.igp-stats span{white-space:nowrap}}
 @media (max-width:760px){.igp-stats{gap:6px;font-size:13px;min-width:0}.igp-stats b{font-size:15px}.igp-main{grid-template-columns:auto minmax(0,1fr)}}
+
+/* ===== SEO del blog en el editor ===== */
+.seo{border:1px solid var(--rosa);border-radius:10px;padding:12px;background:var(--marfil);display:flex;flex-direction:column;gap:10px;margin:0 0 6px}
+.seo.hidden{display:none}
+.seo-head{display:flex;flex-direction:column;gap:2px}
+.seo label{display:flex;flex-direction:column;gap:4px;font-size:12px;color:var(--chocolate);margin:0}
+.seo .cnt{float:right;color:var(--taupe)}.seo .cnt.mal{color:var(--terracota);font-weight:700}
+.seo-2{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+@media (max-width:560px){.seo-2{grid-template-columns:1fr}}
+.seo-slug{display:flex;align-items:center;border:1px solid var(--rosa);border-radius:6px;background:#fff;overflow:hidden}
+.seo-slug span{padding:0 6px 0 10px;color:var(--taupe);font-size:13px;white-space:nowrap}
+.seo-slug input{border:0;padding-left:0}
+.seo .link{align-self:flex-start;font-size:12px}
+.seo-g{background:#fff;border-radius:8px;padding:12px 14px;font-family:Arial,Helvetica,sans-serif;border:1px solid #e8e8e8}
+.sg-site{display:flex;align-items:center;gap:10px;margin-bottom:4px}
+.sg-site div{display:flex;flex-direction:column;font-size:12px;line-height:1.3;color:#202124}.sg-site div span{color:#4d5156}
+.sg-fav{width:26px;height:26px;border-radius:50%;background:#f1f3f4;display:grid;place-items:center;font-size:12px;color:#AB391B;font-weight:700}
+.sg-t{color:#1a0dab;font-size:19px;line-height:1.3;margin:2px 0}
+.sg-d{color:#4d5156;font-size:13px;line-height:1.55}
+.seo-chk{list-style:none;margin:0;padding:0;display:grid;grid-template-columns:1fr 1fr;gap:3px 12px;font-size:12px;color:var(--taupe)}
+.seo-chk li.ok{color:#3c7a4a}.seo-chk li.info{grid-column:1/-1;color:var(--chocolate);margin-top:4px}
+@media (max-width:560px){.seo-chk{grid-template-columns:1fr}}
+
+/* ===== Blog calcado de yucatanlove.com ===== */
+.yl{background:#fff;color:#222;font-family:Raleway,"Gotham Rounded",sans-serif;border:1px solid #eee;border-radius:12px;overflow:hidden;padding-bottom:40px}
+.yl-top{background:#F2E8E8;font-size:10px;padding:10px 6%;color:#222}
+.yl-top span{display:inline-block;width:100px;border-bottom:1px solid #bbb;margin-left:6px;vertical-align:middle}
+.yl-head{display:flex;justify-content:space-between;align-items:center;gap:20px;padding:30px 6%;flex-wrap:wrap}
+.yl-logo{display:flex;flex-direction:column;align-items:center;gap:4px}
+.yl-logo img{width:170px}
+.yl-logo span{font-size:8px;letter-spacing:.25em;color:#AB391B}
+.yl-head nav{display:flex;gap:30px;flex-wrap:wrap;font-family:Raleway,sans-serif;font-size:10px;letter-spacing:.06em;text-transform:uppercase;color:#222}
+.yl-head nav .on{color:#AB391B}
+.yl-sec{text-align:center;padding:40px 8% 30px}
+.yl-sec h2{font-family:"Playfair Display",Georgia,serif;font-weight:400;font-size:26px;text-transform:uppercase;letter-spacing:.02em;margin:0 0 14px;color:#222}
+.yl-sec p{font-size:13px;max-width:620px;margin:0 auto;line-height:1.6}
+.yl-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:40px 30px;padding:20px 6% 0}
+@media (max-width:900px){.yl-grid{grid-template-columns:repeat(2,minmax(0,1fr))}}
+@media (max-width:560px){.yl-grid{grid-template-columns:1fr;gap:34px}.yl-head{justify-content:center}.yl-head nav{gap:14px;justify-content:center}}
+.yl-card{border:0;background:none;padding:0;text-align:left;display:flex;flex-direction:column;gap:12px;font:inherit;color:inherit;cursor:pointer}
+.yl-img{aspect-ratio:3/2;background:#f3eeee;overflow:hidden}
+.yl-img img{width:100%;height:100%;object-fit:cover;display:block}
+.yl-img .ph{height:100%}
+.yl-card h3,.ylp-rel h4{font-family:"Cormorant Garamond",Georgia,serif;font-style:italic;font-weight:600;font-size:24px;line-height:1.3;margin:4px 0 0;color:#222;letter-spacing:.01em}
+.yl-card p{margin:0;font-size:15px;line-height:1.6;color:#222;display:-webkit-box;-webkit-line-clamp:4;-webkit-box-orient:vertical;overflow:hidden}
+.yl-more{font-family:Montserrat,sans-serif;font-weight:500;font-size:12px;letter-spacing:.14em;text-transform:uppercase;color:#222}
+.yl-meta{font-size:11px;color:#999;display:flex;align-items:center;gap:6px;flex-wrap:wrap}
+/* Página del artículo */
+.blg{position:fixed;inset:0;z-index:85;background:rgba(48,48,48,.55);overflow:auto;padding:20px}
+.blg.hidden{display:none}
+.blg-bar{position:sticky;top:0;z-index:2;display:flex;align-items:center;gap:10px;max-width:1100px;margin:0 auto 10px;background:var(--arena);border-radius:10px;padding:8px 10px}
+.blg-url{flex:1;font-size:13px;color:var(--chocolate);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.blg-page{max-width:1100px;margin:0 auto}
+@media (max-width:760px){.blg{padding:0}.blg-bar{border-radius:0;margin:0}}
+.ylp-hero{position:relative;margin:0 6%;aspect-ratio:1200/558;background:#f3eeee;overflow:hidden}
+.ylp-hero img{width:100%;height:100%;object-fit:cover;display:block}
+.ylp-noimg{height:100%;display:grid;place-items:center;color:#999;font-size:13px}
+.ylp-date{position:absolute;top:18px;left:0;background:#fff;display:flex;flex-direction:column;align-items:center;padding:6px 10px;font-size:9px;text-transform:uppercase;line-height:1.2;color:#222}
+.ylp-date b{font-size:18px;font-family:Montserrat,sans-serif}
+.ylp-body{padding:22px 6% 0}
+.ylp-cat{font-size:11px;letter-spacing:.06em;text-transform:uppercase;color:#AB391B}
+.ylp-body h1{font-family:Montserrat,sans-serif;font-weight:600;font-size:29px;line-height:1.25;text-transform:uppercase;letter-spacing:1px;margin:8px 0 22px;color:#222}
+@media (max-width:560px){.ylp-body h1{font-size:21px}}
+.ylp-txt{font-size:14px;line-height:1.7;color:#222;padding:0 10px}
+.ylp-txt p{margin:0 0 16px}.ylp-txt strong{font-weight:700}
+.ylp-txt h2{font-family:Montserrat,sans-serif;font-weight:600;font-size:19px;margin:26px 0 10px}
+.ylp-tags{margin:24px 10px 0;font-size:12px;display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+.ylp-tags span{font-weight:700;letter-spacing:.06em}
+.ylp-tags a{color:#AB391B}
+.ylp-by{margin:10px 10px 0;font-size:12px;color:#777}
+.ylp-rel-t{font-family:"Playfair Display",Georgia,serif;font-weight:400;font-size:22px;text-align:center;margin:40px 0 20px}
+.ylp-rel{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:20px}
+.ylp-rel h4{font-size:18px}
+@media (max-width:760px){.ylp-rel{grid-template-columns:1fr 1fr}}
+.ylp-seo{margin:40px 6% 0;border:1px dashed var(--rosa);border-radius:10px;padding:14px 16px;background:var(--marfil);font-family:var(--body,inherit)}
+.ylp-seo h4{margin:0 0 10px;font-size:14px;color:var(--terracota)}
+.ylp-f{display:grid;grid-template-columns:150px 1fr auto;gap:10px;align-items:start;padding:8px 0;border-top:1px solid #eee;font-size:13px}
+.ylp-f span{color:var(--taupe)}.ylp-f p{margin:0;white-space:pre-wrap;word-break:break-word}
+@media (max-width:560px){.ylp-f{grid-template-columns:1fr auto}.ylp-f span{grid-column:1/-1}}
+.seo-slug input{min-width:0;flex:1}
+.yl-head nav{gap:20px}

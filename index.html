@@ -21,7 +21,9 @@
 <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@400;600&family=Nunito+Sans:wght@400;600;700&display=swap" rel="stylesheet">
 <link rel="preload" href="fonts/the-seasons-regular.woff2" as="font" type="font/woff2" crossorigin>
 <link rel="preload" href="fonts/gotham-rounded-light.woff2" as="font" type="font/woff2" crossorigin>
-<link rel="stylesheet" href="styles.css?v=35">
+<link rel="stylesheet" href="styles.css?v=37">
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@1,600&family=Montserrat:wght@500;600&family=Playfair+Display:wght@400&family=Raleway:wght@300;400;700&display=swap">
 </head>
 <body>
 <!-- Pantalla de carga: se ve hasta que la app decide si mostrar la entrada o la parrilla -->
@@ -265,6 +267,22 @@
       <input type="text" id="ia-extra" placeholder="Indicación opcional: más corto, mencionar la hacienda, tono más emotivo…">
       <div class="ia-out" id="ia-out" aria-live="polite"></div>
     </div>
+    <section class="seo hidden" id="seo-box" aria-label="SEO del blog">
+      <div class="seo-head"><span class="ia-t">🔎 SEO del artículo</span><span class="note">Como en yucatanlove.com · el Copy es el H1 y el Caption es el texto</span></div>
+      <div class="seo-g" id="seo-preview" aria-hidden="true"></div>
+      <label>Título SEO <span class="cnt" id="seo-t-c"></span><input id="seo-titulo" maxlength="90" placeholder="Ej. Mayan Wedding Ceremony in Yucatán | Traditions & Guide"></label>
+      <label>Meta descripción <span class="cnt" id="seo-d-c"></span><textarea id="seo-desc" rows="2" maxlength="200" placeholder="Explore the Mayan wedding ceremony in Yucatán—its rituals…"></textarea></label>
+      <div class="seo-2">
+        <label>URL (slug)<div class="seo-slug"><span>yucatanlove.com/</span><input id="seo-slug" maxlength="90" placeholder="mayan-wedding-ceremony"></div><button type="button" class="link" id="seo-slug-auto">Generar desde el título</button></label>
+        <label>Palabra clave principal<input id="seo-kw" maxlength="60" placeholder="Mayan wedding"></label>
+        <label>Categoría<input id="seo-cat" list="seo-cats" maxlength="60" placeholder="Wedding Ceremony"></label>
+        <label>Autor<input id="seo-autor" maxlength="60" placeholder="Evi Escobedo"></label>
+      </div>
+      <label>Etiquetas (TAGS, separadas por coma)<input id="seo-tags" maxlength="200" placeholder="Mayan wedding, Hacienda wedding"></label>
+      <label>Texto alternativo de la imagen destacada<input id="seo-alt" maxlength="125" placeholder="Couple during a Mayan wedding ceremony in a Yucatán cenote"></label>
+      <ul class="seo-chk" id="seo-chk"></ul>
+      <datalist id="seo-cats"><option>Wedding Planner</option><option>Wedding Planning</option><option>Wedding Ceremony</option><option>Wellness</option><option>Make Up</option><option>Hairstyle</option><option>Ideas &amp; Tips</option><option>Destination Wedding</option><option>Hacienda Wedding</option><option>Beach Wedding</option><option>Cenote Wedding</option><option>Religious Wedding</option><option>Legal Wedding</option><option>Symbolic Wedding</option><option>Catering</option><option>Favor</option><option>Bridal and Groom's Wear</option><option>Jewelry and Accessories</option><option>Guest</option><option>Bridesmaids</option><option>Groomsmen</option></datalist>
+    </section>
     <label for="e-inspo">Inspo / Referencia<textarea id="e-inspo" rows="2" placeholder="Pega uno o varios enlaces"></textarea></label>
     <div class="lnks" id="e-inspo-links"></div>
     <label for="e-comentarios">Comentarios<textarea id="e-comentarios" rows="3"></textarea></label>
@@ -286,6 +304,10 @@
   </div>
 </aside>
 
+<div id="blg" class="blg hidden" role="dialog" aria-modal="true" aria-label="Vista del artículo">
+  <div class="blg-bar"><button type="button" class="btn ghost small" id="blg-close">‹ Volver</button><span class="blg-url" id="blg-url"></span><button type="button" class="btn small" id="blg-edit">✎ Editar</button></div>
+  <div class="blg-page" id="blg-page"></div>
+</div>
 <div id="pfm" class="pub hidden" role="dialog" aria-modal="true" aria-labelledby="pfm-t">
   <div class="pub-card pfm-card">
     <div class="pub-head"><b id="pfm-t" class="pfm-t">Editar perfil</b><button type="button" class="pub-x" id="pfm-close" aria-label="Cerrar">✕</button></div>
@@ -356,7 +378,7 @@
 
 <div id="print-area" aria-hidden="true"></div>
 <script src="lib/supabase.js"></script>
-<script src="config.js?v=35"></script>
-<script src="app.js?v=35"></script>
+<script src="config.js?v=37"></script>
+<script src="app.js?v=37"></script>
 </body>
 </html>

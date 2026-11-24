@@ -647,18 +647,24 @@ function renderPlataforma(){
       <span class="ig-date">${esc(fmtCorto(p.fecha) || "sin fecha")}</span></button>`; }).join("") : vacio}</div>`;
 
   if (plat === "blog") {
-    const [dest, ...resto] = list;
-    const meta = p => `<span class="bl-cat">${esc(p.pilar || "Blog")}</span>`;
-    const ext = p => { const c = String(p.caption || ""); return esc(c.slice(0, 170)) + (c.length > 170 ? "…" : ""); };
-    html = `${editar}<div class="bl">
-      <header class="bl-head">${Pp.foto_path ? `<img src="${esc(pfFoto("blog"))}" alt="${D("nombre", "")}">` : `<img src="icons/logo-color-texto.png" alt="YUC'ATÅLOVE">`}<nav><span>Weddings</span><span>Haciendas</span><span>Wedding weekend</span><span class="on">Journal</span><span>Contact</span></nav></header>
-      <div class="bl-hero"><span class="label-sm">Journal</span><h2>${D("bio", "Stories from Yucatán")}</h2></div>
-      ${dest ? `<button type="button" class="bl-dest" data-id="${dest.id}"><div class="bl-img">${img(dest) ? `<img src="${esc(full(dest))}" alt="">` : ph(dest)}</div><div class="bl-txt">${meta(dest)}<h3>${esc(titulo(dest))}</h3><p>${ext(dest)}</p><span class="bl-more">Leer artículo →</span><span class="bl-date">${esc(fmtCorto(dest.fecha) || "sin fecha")} ${chipSt(dest)}</span></div></button>` : vacio}
-      ${resto.length ? `<div class="bl-grid">${resto.map(p => `<button type="button" class="bl-card" data-id="${p.id}"><div class="bl-img">${media(p)}</div>${meta(p)}<h3>${esc(titulo(p))}</h3><p>${ext(p)}</p><span class="bl-date">${esc(fmtCorto(p.fecha) || "sin fecha")} ${chipSt(p)}</span></button>`).join("")}</div>` : ""}</div>`;
+    const ext = p => { const c = String(p.caption || "").replace(/\*\*/g, "").replace(/^#+\s*/gm, "").replace(/\s+/g, " ").trim(); return esc(c.slice(0, 190)) + (c.length > 190 ? "" : ""); };
+    const h1 = p => p.copy || ((p.seo || {}).titulo || "").split("|")[0].trim() || "Sin título";
+    html = `${editar}<div class="yl">
+      <div class="yl-top">search <span></span></div>
+      <header class="yl-head"><div class="yl-logo">${Pp.foto_path ? `<img src="${esc(pfFoto("blog"))}" alt="">` : `<img src="icons/logo-color-texto.png" alt="YUC'ATÅLOVE">`}<span>TOGETHER AS ONE</span></div>
+        <nav><span>Home</span><span>Services</span><span>About</span><span>Real Weddings</span><span class="on">Journal</span><span>Media</span><span>Contact</span></nav></header>
+      <div class="yl-sec"><h2>${D("bio", "Start your wedding planning")}</h2><p>${esc(Pp.categoria || "Enjoy planning your wedding in Mexico. Get expert advice, timelines and resources to make sure your big day is better than you imagined.")}</p></div>
+      ${list.length ? `<div class="yl-grid">${list.map(p => `<button type="button" class="yl-card" data-blog="${p.id}">
+          <div class="yl-img">${img(p) ? `<img src="${esc(full(p))}" alt="${esc((p.seo || {}).alt || "")}" loading="lazy">` : ph(p)}</div>
+          <h3>${esc(h1(p))}</h3><p>${ext(p)}</p><span class="yl-more">Discover this wedding »</span>
+          <span class="yl-meta">${esc(fmtCorto(p.fecha) || "sin fecha")}${(p.seo || {}).cat ? " · " + esc(p.seo.cat) : ""} ${chipSt(p)}</span></button>`).join("")}</div>` : vacio}
+    </div>`;
   }
   v.innerHTML = html;
 }
-$("plat-view").addEventListener("click", e => { if (e.target.closest("[data-editar-perfil]")) { abrirEditorPerfil(plat); return; } const t = e.target.closest("[data-id]"); if (!t) return; const p = posts.find(x => x.id === t.dataset.id); if (p) abrirPublicar(p); });
+$("plat-view").addEventListener("click", e => { if (e.target.closest("[data-editar-perfil]")) { abrirEditorPerfil(plat); return; }
+  const b = e.target.closest("[data-blog]"); if (b) { const p = posts.find(x => x.id === b.dataset.blog); if (p) abrirArticulo(p); return; }
+  const t = e.target.closest("[data-id]"); if (!t) return; const p = posts.find(x => x.id === t.dataset.id); if (p) abrirPublicar(p); });
 
 function renderFeed(){
   const P = PLATS[plat], esIG = plat === "instagram";
@@ -697,6 +703,48 @@ function renderFeed(){
 }
 $("feed-grid").addEventListener("click", e => { const t = e.target.closest(".tile"); if (!t) return; const p = posts.find(x => x.id === t.dataset.id); if (p) abrirPublicar(p); });
 
+/* ---------- Vista del artículo del blog (calcada de una entrada de yucatanlove.com) ---------- */
+let blgPost = null;
+function parrafos(txt){ return String(txt || "").split(/\n{2,}/).map(b => b.trim()).filter(Boolean).map(b => {
+  const t = esc(b).replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>");
+  if (/^#{2}\s/.test(b)) return `<h2>${esc(b.replace(/^#+\s*/, ""))}</h2>`;
+  if (/^#{3}\s/.test(b)) return `<h3>${esc(b.replace(/^#+\s*/, ""))}</h3>`;
+  return `<p>${t.replace(/\n/g, "<br>")}</p>`; }).join(""); }
+async function abrirArticulo(p){
+  blgPost = p; const s = p.seo || {}; await signedUrls(slidesOf(p));
+  const d = p.fecha ? new Date(p.fecha + "T12:00:00") : null, mes = d ? d.toLocaleString("en-US", { month: "short" }) : "";
+  const h1 = p.copy || (s.titulo || "").split("|")[0].trim() || "Sin título";
+  const tags = String(s.tags || "").split(",").map(x => x.trim()).filter(Boolean);
+  const rel = posts.filter(x => x.id !== p.id && x.tipo === "Blog").slice(0, 4);
+  $("blg-url").textContent = "yucatanlove.com/" + (s.slug || slugify(h1)) + "/";
+  $("blg-page").innerHTML = `<div class="yl yl-post">
+    <div class="yl-top">search <span></span></div>
+    <header class="yl-head"><div class="yl-logo"><img src="icons/logo-color-texto.png" alt="YUC'ATÅLOVE"><span>TOGETHER AS ONE</span></div><nav><span>Home</span><span>Services</span><span>About</span><span>Real Weddings</span><span class="on">Journal</span><span>Media</span><span>Contact</span></nav></header>
+    <div class="ylp-hero">${p.imagen_path ? `<img src="${esc(urlOf(p.imagen_path) || thumbUrl(p.imagen_path))}" alt="${esc(s.alt || "")}">` : `<div class="ylp-noimg">Imagen destacada (1200×558)</div>`}
+      ${d ? `<div class="ylp-date"><b>${d.getDate()}</b><span>${esc(mes)}</span><span>${d.getFullYear()}</span></div>` : ""}</div>
+    <div class="ylp-body">
+      <span class="ylp-cat">${esc(s.cat || "Sin categoría")}</span>
+      <h1>${esc(h1)}</h1>
+      <div class="ylp-txt">${parrafos(p.caption) || "<p><em>Aún no hay texto. Escríbelo en el Caption del post.</em></p>"}</div>
+      <div class="ylp-tags"><span>TAGS:</span>${tags.length ? tags.map(t => `<a>${esc(t)}</a>`).join("") : "<em>sin etiquetas</em>"}</div>
+      <div class="ylp-by">Written by <b>${esc(s.autor || "—")}</b> · Est. reading time <b>${minLectura(p.caption)} minutes</b></div>
+      ${rel.length ? `<h3 class="ylp-rel-t">You May Also Like</h3><div class="ylp-rel">${rel.map(r => `<div><div class="yl-img">${r.imagen_path ? `<img src="${esc(thumbUrl(r.imagen_path))}" alt="">` : ""}</div><h4>${esc(r.copy || "Sin título")}</h4></div>`).join("")}</div>` : ""}
+    </div>
+    <div class="ylp-seo"><h4>Lo que verá Google y el equipo web</h4>
+      ${[["Título SEO", s.titulo], ["Meta descripción", s.desc], ["URL", s.slug ? "https://www.yucatanlove.com/" + s.slug + "/" : ""], ["Palabra clave", s.kw], ["Categoría", s.cat], ["Etiquetas", s.tags], ["Autor", s.autor], ["Alt de la imagen", s.alt], ["H1", h1], ["Texto", p.caption]].map(([l, v]) => `<div class="ylp-f"><span>${l}</span><p>${esc(v ? (l === "Texto" ? String(v).slice(0, 220) + (String(v).length > 220 ? "…" : "") : v) : "— falta —")}</p>${v ? `<button type="button" class="btn ghost small" data-cp="${esc(l)}">Copiar</button>` : ""}</div>`).join("")}
+    </div></div>`;
+  $("blg").classList.remove("hidden"); document.body.classList.add("sv-open"); $("blg").scrollTop = 0;
+}
+function cerrarArticulo(){ $("blg").classList.add("hidden"); document.body.classList.remove("sv-open"); blgPost = null; }
+$("blg-close").addEventListener("click", cerrarArticulo);
+$("blg-edit").addEventListener("click", () => { const p = blgPost; cerrarArticulo(); if (p) openEditor(p); });
+document.addEventListener("keydown", e => { if (e.key === "Escape" && !$("blg").classList.contains("hidden")) cerrarArticulo(); });
+$("blg-page").addEventListener("click", async e => {
+  const b = e.target.closest("[data-cp]"); if (!b || !blgPost) return; const s = blgPost.seo || {};
+  const map = { "Título SEO": s.titulo, "Meta descripción": s.desc, "URL": s.slug, "Palabra clave": s.kw, "Categoría": s.cat, "Etiquetas": s.tags, "Autor": s.autor, "Alt de la imagen": s.alt, "H1": blgPost.copy, "Texto": blgPost.caption };
+  const ok = await copiarTexto(map[b.dataset.cp] || ""); b.textContent = ok ? "Copiado ✓" : "No se pudo"; setTimeout(() => b.textContent = "Copiar", 1400);
+});
+
 /* ---------- Editor de perfil de cada red ---------- */
 const PF_CAMPOS = {
   instagram: { campos: ["usuario","categoria","bio","link","seguidores","seguidos","extra"], extra: "Publicaciones (vacío = las del plan)" },
@@ -704,7 +752,7 @@ const PF_CAMPOS = {
   pinterest: { campos: ["usuario","bio","link","seguidores","seguidos","extra"], extra: "Visualizaciones mensuales" },
   facebook:  { campos: ["categoria","ubicacion","bio","link","seguidores","extra"], extra: "Me gusta de la página", portada: true },
   pauta:     { campos: ["link","extra"], extra: "Botón del anuncio (ej. Más información)", sinFoto: true, nota: "Los anuncios usan la foto y el usuario de Instagram." },
-  blog:      { campos: ["bio","link"], bio: "Título del journal", foto: "Logo del blog" },
+  blog:      { campos: ["bio","categoria","link"], bio: "Título de la sección (ej. Start your wedding planning)", foto: "Logo del blog" },
 };
 let pfPlat = "", pfFile = null, pfFile2 = null, pfUrl = "", pfUrl2 = "";
 function abrirEditorPerfil(k){
@@ -712,7 +760,8 @@ function abrirEditorPerfil(k){
   $("pfm-t").textContent = "Editar perfil de " + PLATS[k].n;
   ["nombre","usuario","categoria","ubicacion","bio","link","seguidores","seguidos","extra"].forEach(c => { $("pf-" + c).value = P[c] || ""; });
   document.querySelectorAll("#pfm-form [data-pf]").forEach(l => l.classList.toggle("hidden", !C.campos.includes(l.dataset.pf)));
-  $("pf-extra-l").textContent = C.extra || "Extra"; $("pf-bio-l").textContent = C.bio || "Presentación / bio";
+  $("pf-extra-l").textContent = C.extra || "Extra";
+  document.querySelector('#pfm-form [data-pf="categoria"]').firstChild.textContent = k === "blog" ? "Descripción de la sección" : "Categoría"; $("pf-bio-l").textContent = C.bio || "Presentación / bio";
   $("pfm-portada-wrap").classList.toggle("hidden", !C.portada);
   document.querySelector(".pfm-foto").classList.toggle("hidden", !!C.sinFoto);
   $("pfm-av-btn").textContent = C.foto ? "Cambiar " + C.foto.toLowerCase() : "Cambiar foto de perfil";
@@ -939,7 +988,7 @@ function openEditor(p){
   ["fecha","copy","caption","inspo","comentarios","contenido"].forEach(k => { $("e-"+k).value = p[k] || ""; });
   LINK_FIELDS.forEach(k => { $("e-"+k+"-links").innerHTML = chipsLinks(p[k]); });
   pvIdx = 0; renderPreview(); renderSlides(); $("e-rmimg").classList.toggle("hidden", !p.imagen_path); emsg("");
-  cargarHistorial(); iaLimpiar();
+  cargarHistorial(); iaLimpiar(); seoCargar(p);
   renderUltimo(); renderComentarios(); $("c-text").value = "";
   $("editor").classList.remove("hidden"); $("scrim").classList.remove("hidden");
   if (isMobile()) document.body.style.overflow = "hidden";
@@ -994,6 +1043,7 @@ $("e-save").addEventListener("click", async () => {
   try {
     const patch = {};
     E_FIELDS.forEach(k => { const v = $("e-"+k).value; patch[k] = (k === "copy" ? v.trim() : v) || null; });
+    const seo = seoLeer(); if (patch.tipo === "Blog" || Object.values(seo).some(Boolean)) patch.seo = seo;
     const old = current.imagen_path;
     if (pendingFile) patch.imagen_path = await uploadImage(pendingFile, current.id);
     emsg("Guardando…");
@@ -1086,6 +1136,41 @@ $("e-files").addEventListener("change", async e => {
   await signedUrls(allImagePaths([{ imagenes: nuevas }]));
   if (await guardarSlides(s.concat(nuevas))) { pvIdx = s.length; renderPreview(); renderSlides(); emsg(`${nuevas.length === 1 ? "Imagen agregada" : nuevas.length + " imágenes agregadas"} al carrusel.`); }
 });
+
+/* ---------- SEO del blog (calcado de yucatanlove.com: Rank Math, Article + FAQ, TAGS, autor y tiempo de lectura) ---------- */
+const SEO_K = { titulo: "seo-titulo", desc: "seo-desc", slug: "seo-slug", kw: "seo-kw", cat: "seo-cat", autor: "seo-autor", tags: "seo-tags", alt: "seo-alt" };
+const slugify = s => String(s || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().replace(/&/g, " and ").replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").replace(/-+/g, "-").slice(0, 75).replace(/-+$/, "");
+const palabras = t => (String(t || "").trim().match(/\S+/g) || []).length;
+const minLectura = t => Math.max(1, Math.round(palabras(t) / 200));
+function seoLeer(){ const o = {}; Object.entries(SEO_K).forEach(([k, id]) => { const v = $(id).value.trim(); if (v) o[k] = k === "slug" ? slugify(v) : v; }); return o; }
+function seoCargar(p){ const s = (p && p.seo) || {}; Object.entries(SEO_K).forEach(([k, id]) => { $(id).value = s[k] || ""; }); seoToggle(); seoPintar(); }
+function seoToggle(){ $("seo-box").classList.toggle("hidden", $("e-tipo").value !== "Blog"); }
+function seoPintar(){
+  const s = seoLeer(), h1 = $("e-copy").value.trim(), body = $("e-caption").value, kw = (s.kw || "").toLowerCase();
+  const t = s.titulo || h1 || "Título del artículo", d = s.desc || body.slice(0, 155) || "Meta descripción…";
+  $("seo-t-c").textContent = `${(s.titulo || "").length}/60`; $("seo-t-c").className = "cnt" + ((s.titulo || "").length > 60 ? " mal" : "");
+  $("seo-d-c").textContent = `${(s.desc || "").length}/155`; $("seo-d-c").className = "cnt" + ((s.desc || "").length > 160 ? " mal" : "");
+  $("seo-preview").innerHTML = `<div class="sg-site"><span class="sg-fav">Y</span><div><b>YUC'ATÅLOVE</b><span>https://www.yucatanlove.com › ${esc(s.slug || slugify(h1) || "…")}</span></div></div>
+    <div class="sg-t">${esc(t.length > 62 ? t.slice(0, 60) + "…" : t)}</div><div class="sg-d">${esc(d.length > 158 ? d.slice(0, 155) + "…" : d)}</div>`;
+  const has = (txt) => kw && String(txt || "").toLowerCase().includes(kw);
+  const pals = palabras(body);
+  const checks = [
+    [!!s.kw, "Tiene palabra clave principal"],
+    [has(s.titulo), "La palabra clave está en el título SEO"],
+    [has(h1), "La palabra clave está en el H1 (Copy)"],
+    [has(s.desc), "La palabra clave está en la meta descripción"],
+    [kw && (s.slug || "").includes(slugify(kw)), "La palabra clave está en la URL"],
+    [has(body.slice(0, 600)), "La palabra clave aparece al inicio del texto"],
+    [(s.titulo || "").length >= 30 && (s.titulo || "").length <= 60, "Título SEO entre 30 y 60 caracteres"],
+    [(s.desc || "").length >= 120 && (s.desc || "").length <= 160, "Meta descripción entre 120 y 160 caracteres"],
+    [pals >= 600, `Texto de al menos 600 palabras (lleva ${pals})`],
+    [!!s.cat, "Tiene categoría"], [!!s.tags, "Tiene etiquetas (TAGS)"], [!!s.alt, "La imagen destacada tiene texto alternativo"],
+  ];
+  $("seo-chk").innerHTML = checks.map(([ok, t]) => `<li class="${ok ? "ok" : ""}">${ok ? "✓" : "○"} ${esc(t)}</li>`).join("") + `<li class="info">⏱ ${minLectura(body)} min de lectura · ${pals} palabras</li>`;
+}
+["e-tipo"].forEach(id => $(id).addEventListener("change", () => { seoToggle(); seoPintar(); }));
+["e-copy","e-caption", ...Object.values(SEO_K)].forEach(id => $(id).addEventListener("input", seoPintar));
+$("seo-slug-auto").addEventListener("click", () => { $("seo-slug").value = slugify($("seo-kw").value && !$("e-copy").value ? $("seo-kw").value : ($("seo-titulo").value || $("e-copy").value).split("|")[0]); editorDirty = true; seoPintar(); });
 
 /* ---------- Asistente de IA (Grok / Claude vía función de Supabase) ---------- */
 let iaOpciones = [], iaAccion = "", iaOcupado = false;
