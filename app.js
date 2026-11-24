@@ -170,7 +170,25 @@ function chipsLinks(text){
 
 /* ---------- Acceso ---------- */
 let signupMode = false;
-function showAuth(){ hideBoot(); clearTimeout(bootTimer); $("app").classList.add("hidden"); $("recover").classList.add("hidden"); closeEditor(); $("auth").classList.remove("hidden"); }
+function showAuth(){ hideBoot(); clearTimeout(bootTimer); $("app").classList.add("hidden"); $("recover").classList.add("hidden"); closeEditor(); const yaVisible = !$("auth").classList.contains("hidden"); $("auth").classList.remove("hidden"); if (!yaVisible || !$("auth-art").firstChild) montarArte(); }
+
+/* ---------- Composición de marca animada en la entrada (motion graphics) ----------
+   El SVG trae su propia animación: se dibuja siguiendo las líneas y luego queda con movimiento suave.
+   Volver a insertarlo la reinicia (por eso al tocarla se dibuja de nuevo). */
+let arteTxt = null;
+async function montarArte(){
+  const box = $("auth-art"); if (!box) return;
+  try {
+    if (arteTxt === null) { const r = await fetch("icons/composicion-motion.svg"); if (!r.ok) throw new Error("sin arte"); arteTxt = await r.text(); }
+    if (!arteTxt.trim().startsWith("<svg")) throw new Error("arte inválido");
+    if ($("auth").classList.contains("hidden")) return;
+    box.innerHTML = arteTxt;
+    const svg = box.querySelector("svg");
+    try { svg.setCurrentTime(0); if (matchMedia("(prefers-reduced-motion: reduce)").matches) svg.pauseAnimations(); } catch (_) {}
+  } catch (_) { box.innerHTML = '<img src="icons/composicion.svg" alt="" width="1000" height="1000">'; }   // sin animación: la versión fija
+}
+function desmontarArte(){ const box = $("auth-art"); if (box) box.textContent = ""; }
+$("auth-art").addEventListener("click", montarArte);
 $("a-toggle").addEventListener("click", () => {
   signupMode = !signupMode;
   $("a-submit").textContent = signupMode ? "Crear mi acceso" : "Entrar";
@@ -226,7 +244,7 @@ sb.auth.onAuthStateChange((event, session) => {
 async function start(){
   if (!$("recover").classList.contains("hidden")) return;
   hideBoot(); clearTimeout(bootTimer);
-  $("auth").classList.add("hidden"); $("app").classList.remove("hidden");
+  $("auth").classList.add("hidden"); $("app").classList.remove("hidden"); desmontarArte();
   $("who-email").textContent = user.email; $("pw-user").value = user.email;
   banner(""); netState();
   setView(location.hash.replace("#","") || "parrilla");
@@ -505,7 +523,7 @@ function renderBody(){
     return;
   }
   $("tbody").innerHTML = rows.length ? rows.map(p => `<tr data-id="${p.id}">${COLS.map(c => `<td class="c-${c.k}${c.sticky ? " sticky" : ""}">${cellHtml(p, c)}</td>`).join("")}<td class="c-acc"><button class="icon-btn" data-edit="${p.id}" title="Abrir editor y comentarios" aria-label="Abrir editor">✎${nComent(p.id) ? `<span class="cbadge"> 💬${nComent(p.id)}</span>` : ""}</button><button class="icon-btn" data-del="${p.id}" title="Eliminar post" aria-label="Eliminar post">🗑</button></td></tr>`).join("")
-    : `<tr><td colspan="${COLS.length + 1}" style="padding:28px;text-align:center;color:var(--chocolate)">${emptyMsg}</td></tr>`;
+    : `<tr><td colspan="${COLS.length + 1}" class="td-vacio"><div class="vacio"><img src="icons/motivo-flor.svg" alt="" width="132" height="120"><p>${emptyMsg}</p></div></td></tr>`;
 }
 $("cards").addEventListener("keydown", e => { if ((e.key === "Enter" || e.key === " ") && e.target.matches(".pcard")) { e.preventDefault(); e.target.click(); } });
 $("cards").addEventListener("click", e => { if (reordenando.bloquearClick) { reordenando.bloquearClick = false; return; } if (e.target.closest("a")) return; const b = e.target.closest("[data-open]"); if (!b) return; const p = posts.find(x => x.id === b.dataset.open); if (p) openEditor(p); });
@@ -1463,7 +1481,7 @@ const iso = d => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")
 function calPost(p){
   const c = colorDe("tipo", p.tipo) || "#C3ACA9", u = thumbUrl(p.imagen_path);
   const label = [p.tipo, p.copy].filter(Boolean).join(" · ") || "Sin copy";
-  return `<button type="button" class="cal-post${p.status === "Publicado" ? " pub" : ""}" data-open="${p.id}" style="border-left-color:${c}" title="${esc(label + (p.status ? " — " + p.status : ""))}">${u ? `<img src="${esc(u)}" alt="" loading="lazy">` : ""}<span class="t">${esc(label)}</span></button>`;
+  return `<button type="button" class="cal-post${p.status === "Publicado" ? " ya-pub" : ""}" data-open="${p.id}" style="border-left-color:${c}" title="${esc(label + (p.status ? " — " + p.status : ""))}">${u ? `<img src="${esc(u)}" alt="" loading="lazy">` : ""}<span class="t">${esc(label)}</span></button>`;
 }
 function renderCalendar(){
   const y = calRef.getFullYear(), m = calRef.getMonth(), hoy = iso(new Date());
@@ -1515,7 +1533,7 @@ async function exportarPDF(){
     const porTipo = cuenta("tipo"), porStatus = cuenta("status");
     const titulo = `${MESES[m]} ${y}`;
     // Portada
-    let h = `<section class="pr-page pr-cover"><img src="icons/logo-color.png" alt="YUC'ATÅLOVE"><h1>Parrilla de contenido</h1><div class="sub">${titulo}</div>
+    let h = `<section class="pr-page pr-cover"><img class="pr-art" src="icons/composicion.svg" alt=""><img src="icons/logo-color.png" alt="YUC'ATÅLOVE"><h1>Parrilla de contenido</h1><div class="sub">${titulo}</div>
       <div class="pr-stats"><div class="pr-stat"><b>${delMes.length}</b>publicaciones</div>${Object.entries(porTipo).map(([k, n]) => `<div class="pr-stat"><b>${n}</b>${esc(k)}</div>`).join("")}</div>
       <div class="pr-stats">${Object.entries(porStatus).map(([k, n]) => `<div class="pr-stat"><b>${n}</b>${esc(k)}</div>`).join("")}</div>
       <div class="pr-foot">Generado el ${new Date().toLocaleDateString("es-MX", { day: "numeric", month: "long", year: "numeric" })}</div></section>`;

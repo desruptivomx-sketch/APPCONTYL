@@ -21,19 +21,20 @@
 <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@400;600&family=Nunito+Sans:wght@400;600;700&display=swap" rel="stylesheet">
 <link rel="preload" href="fonts/the-seasons-regular.woff2" as="font" type="font/woff2" crossorigin>
 <link rel="preload" href="fonts/gotham-rounded-light.woff2" as="font" type="font/woff2" crossorigin>
-<link rel="stylesheet" href="styles.css?v=42">
+<link rel="stylesheet" href="styles.css?v=43">
 <link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@1,600&family=Montserrat:wght@500;600&family=Playfair+Display:wght@400&family=Raleway:wght@300;400;700&display=swap">
 </head>
 <body>
 <!-- Pantalla de carga: se ve hasta que la app decide si mostrar la entrada o la parrilla -->
 <section id="boot" class="boot" aria-live="polite">
-  <img src="icons/simbolo-terracota.png" alt="" width="240" height="218">
+  <img src="icons/composicion.svg" alt="" width="220" height="220">
   <p class="note" id="boot-msg">Cargando…</p>
   <button class="btn ghost small hidden" id="boot-fix" type="button">¿No carga? Reparar y volver a intentar</button>
 </section>
 <!-- Acceso -->
-<section id="auth" class="auth hidden" aria-label="Acceso">
+<section id="auth" class="auth auth-2 hidden" aria-label="Acceso">
+  <div class="auth-art" id="auth-art" aria-hidden="true" title="Toca para volver a dibujar"></div>
   <div class="auth-card">
     <img class="auth-logo" src="icons/logo-color.png" alt="YUC'ATÅLOVE · Together as one" width="1000" height="303">
     <h1>Parrilla de contenido</h1>
@@ -208,7 +209,8 @@
         <button class="btn small hidden" id="btn-install" type="button">Instalar app</button>
       </section>
     </div>
-  </main>
+    <div class="firma" aria-hidden="true"><img src="icons/composicion.svg" alt="" width="1000" height="1000" loading="lazy"><span>Together as one</span></div>
+ </main>
 </div>
 
 <!-- Editor de post: panel lateral en escritorio, pantalla completa en celular -->
@@ -384,7 +386,7 @@
 
 <div id="print-area" aria-hidden="true"></div>
 <script src="lib/supabase.js"></script>
-<script src="config.js?v=42"></script>
-<script src="app.js?v=42"></script>
+<script src="config.js?v=43"></script>
+<script src="app.js?v=43"></script>
 </body>
 </html>
