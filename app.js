@@ -497,26 +497,31 @@ const enFeed = p => !FUERA_DEL_FEED.includes(p.tipo) && !esPauta(p);
 const feedOrder = list => list.filter(enFeed).sort((a, b) => (a.orden ?? 0) - (b.orden ?? 0) || String(b.fecha || "").localeCompare(String(a.fecha || "")));
 const IG_I = {
   dots: '<svg viewBox="0 0 24 24"><circle cx="5" cy="12" r="1.4" fill="currentColor"/><circle cx="12" cy="12" r="1.4" fill="currentColor"/><circle cx="19" cy="12" r="1.4" fill="currentColor"/></svg>',
+  addp: '<svg viewBox="0 0 24 24"><circle cx="13" cy="8" r="4"/><path d="M6 20c.8-3.5 3.6-5.5 7-5.5s6.2 2 7 5.5M5 6v6M2 9h6"/></svg>',
   link: '<svg viewBox="0 0 24 24"><path d="M10 14a4 4 0 0 0 5.7 0l3-3a4 4 0 0 0-5.7-5.7l-1 1M14 10a4 4 0 0 0-5.7 0l-3 3a4 4 0 0 0 5.7 5.7l1-1"/></svg>',
 };
 function avatarHtml(k, cls){ const f = pfFoto(k); return `<span class="pf-av ${cls}${f ? " foto" : ""}"><img src="${esc(f || "icons/simbolo-arena.png")}" alt=""></span>`; }
 function linkTxt(l){ return String(l || "").replace(/^https?:\/\//, "").replace(/\/$/, ""); }
+let igBioAbierta = false;
 function renderIgHeader(nPosts, historias){
   const k = "instagram", P = pf(k), hay = historias.length > 0;
+  const lineas = String(P.bio || "").split("\n"), corta = lineas.length > 3 && !igBioAbierta;
+  const bio = esc((corta ? lineas.slice(0, 3) : lineas).join("\n")) + (corta ? `… <button type="button" class="igp-mas" data-bio-mas>más</button>` : "");
+  const pubs = (P.extra || "").trim() || String(nPosts);
   $("ig-profile").innerHTML = `
-    <div class="igp-top"><b>${esc(pfDato(k, "usuario", "yucatalove"))}</b><span>${IG_I.dots}</span></div>
     <div class="igp-main">
       <button type="button" class="igp-av${hay ? " ring" : ""}" id="igp-av" aria-label="${hay ? "Ver historias" : "Foto de perfil"}">${avatarHtml(k, "igp-foto")}</button>
       <div class="igp-info">
-        <div class="igp-row1"><h2>${esc(pfDato(k, "usuario", "yucatalove"))}</h2><span class="igp-btn" data-editar-perfil>Editar perfil</span><span class="igp-btn" data-compartir-perfil>Compartir perfil</span></div>
-        <div class="igp-name">${esc(pfDato(k, "nombre", "YUC'ATÅLOVE"))}</div>
-        <div class="igp-stats"><span><b>${nPosts}</b> publicaciones</span><span><b>${esc(pfDato(k, "seguidores"))}</b> seguidores</span><span><b>${esc(pfDato(k, "seguidos"))}</b> seguidos</span></div>
-        <div class="igp-bio">${P.categoria ? `<span class="igp-cat">${esc(P.categoria)}</span>` : ""}${esc(P.bio || "")}${P.link ? `<a class="igp-link" href="${esc(/^https?:/.test(P.link) ? P.link : "https://" + P.link)}" target="_blank" rel="noopener">${IG_I.link}${esc(linkTxt(P.link))}</a>` : ""}</div>
+        <div class="igp-row1"><h2>${esc(pfDato(k, "usuario", "yucatalove"))}</h2><span class="igp-dots">${IG_I.dots}</span></div>
+        ${P.nombre ? `<div class="igp-name">${esc(P.nombre)}</div>` : ""}
+        <div class="igp-stats"><span><b>${esc(pubs)}</b> publicaciones</span><span><b>${esc(pfDato(k, "seguidores"))}</b> seguidores</span><span><b>${esc(pfDato(k, "seguidos"))}</b> seguidos</span></div>
+        <div class="igp-bio">${P.categoria ? `<span class="igp-cat">${esc(P.categoria)}</span>` : ""}${P.bio ? `<span class="igp-txt">${bio}</span>` : ""}${P.link ? `<a class="igp-link" href="${esc(/^https?:/.test(P.link) ? P.link : "https://" + P.link)}" target="_blank" rel="noopener">${IG_I.link}${esc(linkTxt(P.link))}</a>` : ""}</div>
       </div>
     </div>
-    <div class="igp-btns-m"><span class="igp-btn" data-editar-perfil>Editar perfil</span><span class="igp-btn" data-compartir-perfil>Compartir perfil</span></div>`;
+    <div class="igp-btns"><span class="igp-btn" data-editar-perfil>Editar perfil</span><span class="igp-btn" data-compartir-perfil>Compartir perfil</span><span class="igp-btn igp-ico" aria-hidden="true">${IG_I.addp}</span></div>`;
 }
 $("ig-profile").addEventListener("click", async e => {
+  if (e.target.closest("[data-bio-mas]")) { igBioAbierta = true; renderFeed(); return; }
   if (e.target.closest("[data-editar-perfil]")) { abrirEditorPerfil("instagram"); return; }
   if (e.target.closest("[data-compartir-perfil]")) { const u = "https://instagram.com/" + pfDato("instagram", "usuario", "yucatalove"); const ok = await copiarTexto(u); const b = e.target.closest("[data-compartir-perfil]"); b.textContent = ok ? "Link copiado ✓" : u; setTimeout(() => renderFeed(), 1500); return; }
   if (e.target.closest("#igp-av")) { const h = historiasVisibles(); if (h.length) abrirHistorias(h[0].id); else abrirEditorPerfil("instagram"); }
@@ -694,7 +699,7 @@ $("feed-grid").addEventListener("click", e => { const t = e.target.closest(".til
 
 /* ---------- Editor de perfil de cada red ---------- */
 const PF_CAMPOS = {
-  instagram: { campos: ["usuario","categoria","bio","link","seguidores","seguidos"] },
+  instagram: { campos: ["usuario","categoria","bio","link","seguidores","seguidos","extra"], extra: "Publicaciones (vacío = las del plan)" },
   tiktok:    { campos: ["usuario","bio","link","seguidores","seguidos","extra"], extra: "Me gusta (total)" },
   pinterest: { campos: ["usuario","bio","link","seguidores","seguidos","extra"], extra: "Visualizaciones mensuales" },
   facebook:  { campos: ["categoria","ubicacion","bio","link","seguidores","extra"], extra: "Me gusta de la página", portada: true },

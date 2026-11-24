@@ -21,7 +21,7 @@
 <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@400;600&family=Nunito+Sans:wght@400;600;700&display=swap" rel="stylesheet">
 <link rel="preload" href="fonts/the-seasons-regular.woff2" as="font" type="font/woff2" crossorigin>
 <link rel="preload" href="fonts/gotham-rounded-light.woff2" as="font" type="font/woff2" crossorigin>
-<link rel="stylesheet" href="styles.css?v=34">
+<link rel="stylesheet" href="styles.css?v=35">
 </head>
 <body>
 <!-- Pantalla de carga: se ve hasta que la app decide si mostrar la entrada o la parrilla -->
@@ -115,10 +115,11 @@
       <div id="ig-view">
       <div class="ig-wrap">
       <header class="igp" id="ig-profile"></header>
-      <section id="stories-wrap" aria-label="Historias destacadas">
+      <section id="stories-wrap" aria-label="Historias">
+        <div class="ig-st-l">Historias del plan</div>
         <div class="stories" id="stories"></div>
       </section>
-      <div class="ig-tabs" aria-hidden="true"><span class="on"><svg viewBox="0 0 24 24"><path d="M4 4h16v16H4zM4 9.3h16M4 14.6h16M9.3 4v16M14.6 4v16"/></svg><b>Publicaciones</b></span><span><svg viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="18" rx="4"/><path d="M3 8h18M8 3l3 5M14 3l3 5M10 11.5v6l5-3z"/></svg><b>Reels</b></span><span><svg viewBox="0 0 24 24"><path d="M12 3a5 5 0 0 1 5 5c0 4-5 6-5 6s-5-2-5-6a5 5 0 0 1 5-5zM4 21c1.5-3.5 4.5-5 8-5s6.5 1.5 8 5"/></svg><b>Etiquetadas</b></span></div>
+      <div class="ig-tabs" aria-hidden="true"><span class="on"><svg viewBox="0 0 24 24"><g fill="currentColor" stroke="none"><rect x="3" y="3" width="5" height="5" rx="1"/><rect x="9.5" y="3" width="5" height="5" rx="1"/><rect x="16" y="3" width="5" height="5" rx="1"/><rect x="3" y="9.5" width="5" height="5" rx="1"/><rect x="9.5" y="9.5" width="5" height="5" rx="1"/><rect x="16" y="9.5" width="5" height="5" rx="1"/><rect x="3" y="16" width="5" height="5" rx="1"/><rect x="9.5" y="16" width="5" height="5" rx="1"/><rect x="16" y="16" width="5" height="5" rx="1"/></g></svg></span><span><svg viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="18" rx="5"/><path d="M10 8.5v7l6-3.5z"/></svg></span><span><svg viewBox="0 0 24 24"><path d="M17 3l3 3-3 3M4 11V9a3 3 0 0 1 3-3h13M7 21l-3-3 3-3M20 13v2a3 3 0 0 1-3 3H4"/></svg></span><span><svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="17" rx="4"/><circle cx="12" cy="11" r="3"/><path d="M7 21c.8-2.6 2.8-4 5-4s4.2 1.4 5 4M9 4l1.5-2h3L15 4"/></svg></span></div>
       <section class="feed-grid" id="feed-grid" aria-label="Cuadrícula del feed"></section>
       </div>
       <p class="note ig-plan" id="ig-plan"></p>
@@ -355,7 +356,7 @@
 
 <div id="print-area" aria-hidden="true"></div>
 <script src="lib/supabase.js"></script>
-<script src="config.js?v=34"></script>
-<script src="app.js?v=34"></script>
+<script src="config.js?v=35"></script>
+<script src="app.js?v=35"></script>
 </body>
 </html>
