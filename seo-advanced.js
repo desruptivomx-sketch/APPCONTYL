@@ -1,6 +1,15 @@
-/* Motor editorial independiente. No usa código ni servicios privados de Yoast. */
+/* SEO avanzado del constructor de blogs: un motor editorial independiente y su panel dentro del cuadro de SEO.
+   No usa código ni servicios privados de Yoast. Sus números son guías editoriales (heurísticas), no las puntuaciones de Yoast
+   ni posiciones en Google.
+   · El motor (analyze, occurrences, articleSchema, metricDelta) no toca la página y se prueba con Node: node --test tests/
+   · En el navegador, app.js es privado: este archivo recibe del editor solo lo que necesita mediante window.APPCONTYL_SEO
+     (ver «SEO avanzado» en app.js) y se registra ahí. Si este archivo no carga, el editor funciona igual.
+   · Lo que depende del servidor (asistente, auditoría del sitio, Search Console, envío de metadatos) viene apagado y se
+     enciende en config.js cuando su función ya esté desplegada y probada. */
 (function(){
 "use strict";
+
+/* ===================== Motor (sin DOM) ===================== */
 const norm=s=>String(s||"").normalize("NFD").replace(/[\u0300-\u036f]/g,"").toLowerCase();
 const tokens=s=>norm(s).match(/[\p{L}\p{N}]+/gu)||[];
 const stem=(w,lang)=>lang==="en"?w.replace(/ies$/,"y").replace(/(?:ches|shes|xes|zes|sses)$/,(m)=>m.slice(0,-2)).replace(/(?<!s)s$/,""):w.replace(/(?:es|s)$/,"");
@@ -44,152 +53,276 @@ function articleSchema(d){
 }
 function metricDelta(a,b){return typeof a==="number"&&typeof b==="number"&&b!==0?100*(a-b)/b:null;}
 if(typeof module!=="undefined"&&module.exports){module.exports={analyze,occurrences,articleSchema,metricDelta};return;}
-const root=document.getElementById("seo-box"); if(!root)return;
-const el=(tag,txt,cls)=>{const n=document.createElement(tag);if(txt!=null)n.textContent=txt;if(cls)n.className=cls;return n;};
-const panel=el("details",null,"seo-advanced");panel.open=true;
-panel.append(el("summary","SEO avanzado · inteligencia editorial"));
-const style=el("style");style.textContent=".seo-advanced{margin-top:16px;border-top:1px solid #aaa5;padding-top:12px}.seo-advanced summary{cursor:pointer;font-weight:700}.seo-advanced .adv-group{margin:12px 0;padding:12px;border:1px solid #aaa5;border-radius:8px}.seo-advanced label{display:block;margin:6px 0}.seo-advanced input:not([type=checkbox]),.seo-advanced select{width:100%;box-sizing:border-box}.seo-advanced .adv-row{display:flex;gap:8px;flex-wrap:wrap;align-items:center}.seo-advanced .adv-row>*{flex:1;min-width:110px}.seo-advanced .adv-note{font-size:12px;opacity:.8}.seo-advanced button{margin:4px 4px 4px 0}.seo-advanced ul{padding-left:20px}.seo-advanced .adv-social{border:1px solid #aaa5;padding:12px;border-radius:8px;overflow-wrap:anywhere}.seo-advanced img{width:100%;max-height:180px;object-fit:cover}.seo-advanced .adv-status{font-size:12px;line-height:1.6}";
-panel.append(style);root.append(panel);
-const fields={};const group=t=>{const d=el("div",null,"adv-group");d.append(el("strong",t));panel.append(d);return d;};
-function field(g,k,label,type="text"){const l=el("label",label);const n=el(type==="textarea"?"textarea":"input");if(type!=="textarea")n.type=type;if(type==="checkbox")n.checked=false;else n.maxLength=500;l.append(n);g.append(l);fields[k]=n;return n;}
-const g=group("Palabras clave y variantes");const lang=el("select");for(const [v,t] of [["en","English"],["es","Español"]]){const o=el("option",t);o.value=v;lang.append(o);}g.append(lang);fields.lang=lang;
-field(g,"syn0","Sinónimos de la palabra clave principal (separados por coma)");
-for(let i=1;i<=4;i++){const row=el("div",null,"adv-row");g.append(row);field(row,"kw"+i,"Frase relacionada "+i);field(row,"syn"+i,"Sinónimos");}
-field(g,"cornerstone","Contenido pilar","checkbox");const result=el("div",null,"adv-status");g.append(result);
-const read=group("Legibilidad e insights");const readout=el("div");read.append(readout);
-const linking=group("Enlazado interno y contenido relacionado");const links=el("div");linking.append(links);
-const audit=group("Auditoría de contenido publicado");
-const auditButton=el("button","Consultar WordPress","btn ghost small");auditButton.type="button";
-const auditOut=el("div",null,"adv-status");audit.append(auditButton,auditOut);
-let auditData=null,auditBusy=false;
-function renderAudit(){
- if(!auditData)return;
- const d=input(),r=auditData,items=r.articulos||[],cov=r.cobertura||{};
- auditOut.replaceChildren();
- auditOut.append(el("p","Lectura de "+items.length+" entradas/páginas · "+new Date(r.fecha).toLocaleString("es-MX"),"adv-note"));
- for(const [k,v] of Object.entries(cov))auditOut.append(el("p",k+": "+v.leidos+"/"+(v.total??"?")+(v.completa?" · completo":" · parcial"),"adv-note"));
- auditOut.append(el("p","Los enlaces se cuentan entre artículos y páginas consultados, sin menús, widgets, otros tipos de contenido ni JavaScript. No es una auditoría de rastreo completa.","adv-note"));
- const termSet=new Set(tokens(d.title+" "+d.phrases.map(p=>p.term).join(" ")).filter(w=>w.length>3));
- const relevant=items.filter(p=>p.url&&p.slug!==d.slug).map(p=>({...p,score:[...new Set(tokens(p.titulo+" "+p.slug))].filter(t=>termSet.has(t)).length})).filter(p=>p.score>0).sort((a,b)=>b.score-a.score).slice(0,8);
- auditOut.append(el("strong","Enlaces internos recomendados (publicados)"));
- for(const p of relevant){const row=el("div",null,"adv-row"),a=el("a",p.titulo);const u=safeUrl(p.url);if(!u)continue;a.href=u;a.target="_blank";a.rel="noopener noreferrer";row.append(a);const c=el("button","Copiar enlace","btn ghost small");c.type="button";c.onclick=async()=>{c.textContent=await copiarTexto(u)?"Copiado":"No se pudo";};row.append(c);auditOut.append(row);}
- if(!relevant.length)auditOut.append(el("p","No hay coincidencias suficientes."));
- const orphan=items.filter(p=>p.entrantes===0);auditOut.append(el("strong","Sin enlaces entrantes detectados: "+orphan.length));
- list(auditOut,orphan.slice(0,15).map(p=>p.titulo||p.slug));
- const thisPost=items.find(p=>p.slug===d.slug);if(thisPost)auditOut.append(el("p","Artículo actual: "+thisPost.entrantes+" fuentes entrantes y "+thisPost.salientes+" destinos internos en la muestra."));
+
+/* ===================== Panel dentro del editor ===================== */
+const app = window.APPCONTYL_SEO, root = document.getElementById("seo-box");
+if (!app || !root) return;
+const ACTIVO = Object.assign({ ia: false, auditoria: false, gsc: false, meta: false }, window.APPCONTYL_SEO_ACTIVO || {});
+const SITIO = "https://www.yucatanlove.com/";
+const el = (tag, txt, cls) => { const n = document.createElement(tag); if (txt != null) n.textContent = txt; if (cls) n.className = cls; return n; };
+const boton = txt => { const b = el("button", txt, "btn ghost small"); b.type = "button"; return b; };
+const safeUrl = s => { try { const u = new URL(String(s || "").trim()); return /^https?:$/.test(u.protocol) && !u.username && !u.password ? u.href : null; } catch (_) { return null; } };
+// items: texto, o [cumple, texto] para una línea con ✓ / ○ (mismo aspecto que la lista de revisión de arriba)
+const lista = (parent, items, cls) => { const ul = el("ul", null, cls || "avz-l"); items.forEach(x => ul.append(Array.isArray(x) ? el("li", (x[0] ? "✓ " : "○ ") + x[1], x[0] ? "ok" : "") : el("li", x))); parent.append(ul); return ul; };
+const recuerda = (k, v) => { try { if (v === undefined) return localStorage.getItem(k); localStorage.setItem(k, v); } catch (_) {} return null; };
+const split = s => String(s || "").split(",").map(x => x.trim()).filter(Boolean).slice(0, 12);
+const copiaEn = (b, txt, normal) => async () => { b.textContent = await app.copiar(txt()) ? "Copiado" : "No se pudo copiar"; setTimeout(() => { b.textContent = normal; }, 1800); };
+// Respuesta de una función del servidor: lo que devolvió, o su mensaje de error
+async function servidor(fn, body){
+  const { data, error } = await app.invocar(fn, body); let r = data;
+  if (error) { r = null; try { r = await error.context.json(); } catch (_) {} if (!r || typeof r !== "object") r = {}; if (!r.error) r.error = "No se pudo conectar con el servidor. Inténtalo de nuevo."; }
+  return r && typeof r === "object" ? r : { error: "Respuesta inválida." };
 }
-auditButton.onclick=async()=>{
- if(auditBusy)return;auditBusy=true;auditButton.disabled=true;auditOut.textContent="Consultando contenido publicado…";
- try{const {data,error}=await sb.functions.invoke("wp",{body:{accion:"auditoria_seo"}});if(error||!data?.ok||!Array.isArray(data.articulos))throw Error(data?.error||"Auditoría no disponible. Verifica los permisos de administrador y el despliegue de la función wp.");auditData=data;renderAudit();}
- catch(e){auditData=null;auditOut.textContent=e.message||"No disponible";}
- finally{auditBusy=false;auditButton.disabled=false;}
-};
-const social=group("Vista previa social · Facebook / X");field(social,"socialTitle","Título social");field(social,"socialDescription","Descripción social","textarea");field(social,"socialImage","URL de imagen social");const preview=el("div",null,"adv-social");social.append(preview);
-const tech=group("Configuración editorial y técnica");field(tech,"canonical","URL canónica");field(tech,"applyMeta","Enviar ajustes SEO avanzados a WordPress (solo borradores)","checkbox");field(tech,"noindex","Solicitar noindex (desmarcar no elimina una orden previa)","checkbox");field(tech,"oldSlug","Slug anterior (propuesta de redirección)");field(tech,"schema","Tipo de Schema (Article / BlogPosting / NewsArticle)");const technical=el("div",null,"adv-note");tech.append(technical);
-const schemaGroup=group("Generador Schema · JSON-LD");
-field(schemaGroup,"schemaImage","URL pública de imagen representativa (opcional)");
-field(schemaGroup,"publishedDate","Fecha real de publicación (opcional)","date");
-field(schemaGroup,"modifiedDate","Fecha real de modificación (opcional)","date");
-const schemaOut=el("pre");schemaOut.style.cssText="white-space:pre-wrap;overflow-wrap:anywhere;max-height:240px;overflow:auto;font-size:12px";
-const schemaNote=el("p",null,"adv-note");
-const schemaCopy=el("button","Copiar JSON-LD","btn ghost small");schemaCopy.type="button";
-const schemaDownload=el("button","Exportar .json","btn ghost small");schemaDownload.type="button";
-schemaGroup.append(schemaNote,schemaOut,schemaCopy,schemaDownload);
+
+const panel = el("details", null, "seo-avz"); panel.id = "seo-avz"; panel.open = recuerda("seoAvzAbierto") === "1";
+const cab = el("summary"); cab.append(el("span", "🧭 SEO avanzado", "ia-t"), el("span", "frases relacionadas, legibilidad, enlaces internos, redes y Schema", "note")); panel.append(cab);
+root.insertBefore(panel, document.getElementById("wp-box"));   // queda después de la lista de revisión y antes de «Pasarlo a WordPress»
+
+const fields = {}, grupos = {};   // fields: lo que se guarda en seo.advanced
+function grupo(id, titulo, abierto){
+  const d = el("details", null, "avz-g"), c = el("div", null, "avz-c"); d.open = !!abierto; d.append(el("summary", titulo), c); panel.append(d); grupos[id] = d;
+  d.addEventListener("toggle", () => { if (d.open) render(); }); return c;
+}
+function campo(g, k, rotulo, tipo, opciones){
+  const l = el("label", rotulo), n = el(tipo === "textarea" ? "textarea" : tipo === "select" ? "select" : "input");
+  if (tipo === "select") for (const [v, t] of opciones) { const o = el("option", t); o.value = v; n.append(o); }
+  else if (tipo !== "textarea") n.type = tipo || "text";
+  if (tipo === "checkbox") { l.className = "avz-op"; l.prepend(n); }
+  else { if (tipo === "textarea") n.rows = 2; if (!tipo || tipo === "textarea" || tipo === "url") n.maxLength = 500; l.append(n); }
+  n.dataset.avz = k; g.append(l); fields[k] = n; return n;
+}
+const valor = k => fields[k].type === "checkbox" ? fields[k].checked : fields[k].value.trim();
+
+/* --- Frases clave --- */
+const gFrases = grupo("frases", "Frases clave y variantes", true);
+gFrases.append(el("p", "La frase principal es la «Palabra clave principal» de arriba. Aquí cuentan también sus plurales y los sinónimos que escribas.", "note"));
+campo(gFrases, "lang", "Idioma del artículo", "select", [["en", "English"], ["es", "Español"]]);
+campo(gFrases, "syn0", "Sinónimos de la frase principal (separados por coma)");
+const relacionadas = el("details", null, "avz-sub"); relacionadas.append(el("summary", "Frases relacionadas (opcional, hasta 4)")); gFrases.append(relacionadas);   // plegadas mientras no se usen
+for (let i = 1; i <= 4; i++) { const f = el("div", null, "avz-fila"); relacionadas.append(f); campo(f, "kw" + i, "Frase relacionada " + i); campo(f, "syn" + i, "Sus sinónimos"); }
+campo(gFrases, "cornerstone", "Es contenido pilar (uno de los artículos más importantes del sitio)", "checkbox");
+const result = el("div", null, "avz-res"); gFrases.append(result);
+
+/* --- Legibilidad --- */
+const readout = grupo("lectura", "Legibilidad", true);
+
+/* --- Enlaces internos (con los artículos que hay en la parrilla) --- */
+const links = grupo("enlaces", "Enlaces internos", false);
+let memo = { k: "", t: 0, n: 0 };   // cuántos artículos de la parrilla enlazan a este: se recalcula como mucho cada 5 s
+const entrantes = (slug, otros) => { const k = slug + "|" + otros.length, ahora = Date.now(); if (memo.k !== k || ahora - memo.t > 5000) memo = { k, t: ahora, n: otros.filter(p => JSON.stringify(p.cuerpo || []).includes("/" + slug + "/")).length }; return memo.n; };
+
+/* --- Vista previa en redes --- */
+const gSocial = grupo("redes", "Vista previa en redes (Facebook / X)", false);
+campo(gSocial, "socialTitle", "Título para redes"); campo(gSocial, "socialDescription", "Descripción para redes", "textarea"); campo(gSocial, "socialImage", "Dirección (URL) de la imagen para redes", "url");
+const preview = el("div", null, "avz-social"); gSocial.append(preview, el("p", "Vista aproximada. Se guardan aquí como guía: en WordPress se copian en la pestaña «Social» de Yoast.", "note"));
+
+/* --- Schema (JSON-LD): solo vista y exportación; no se inserta nada en WordPress --- */
+const gSchema = grupo("schema", "Schema (JSON-LD)", false);
+campo(gSchema, "schema", "Tipo", "select", [["BlogPosting", "BlogPosting (artículo de blog)"], ["Article", "Article"], ["NewsArticle", "NewsArticle (noticia)"]]);
+campo(gSchema, "schemaImage", "Dirección pública de la imagen representativa (opcional)", "url");
+{ const f = el("div", null, "avz-fila"); gSchema.append(f); campo(f, "publishedDate", "Fecha real de publicación (opcional)", "date"); campo(f, "modifiedDate", "Fecha real de modificación (opcional)", "date"); }
+const schemaNote = el("p", null, "note"), schemaOut = el("pre", null, "avz-pre"), schemaCopy = boton("Copiar JSON-LD"), schemaDownload = boton("Descargar .json");
+{ const a = el("div", null, "actions"); a.append(schemaCopy, schemaDownload); gSchema.append(schemaNote, schemaOut, a); }
 function makeSchema(){
- const s=originalRead(),a=snapshot(),slug=s.slug||"",u=safeUrl(a.canonical)||safeUrl(current?.wp?.estado==="publish"?current.wp.enlace:"")||(slug?"https://www.yucatanlove.com/"+encodeURIComponent(slug)+"/":null);
- const date=v=>/^\d{4}-\d{2}-\d{2}$/.test(v||"")?v:null;
- return articleSchema({type:a.schema,headline:$("e-copy").value,description:s.desc,author:s.autor,lang:a.lang,url:u,image:safeUrl(a.schemaImage)||safeUrl(a.socialImage),datePublished:date(a.publishedDate),dateModified:date(a.modifiedDate)});
+  const s = app.base(), slug = s.slug || "", u = safeUrl(fields.canonical ? valor("canonical") : guardado.canonical) || safeUrl(app.urlPublicada()) || (slug ? SITIO + encodeURIComponent(slug) + "/" : null);
+  const fecha = v => /^\d{4}-\d{2}-\d{2}$/.test(v || "") ? v : null;
+  return articleSchema({ type: valor("schema"), headline: app.h1(), description: s.desc, author: s.autor, lang: valor("lang"), url: u, image: safeUrl(valor("schemaImage")) || safeUrl(valor("socialImage")), datePublished: fecha(valor("publishedDate")), dateModified: fecha(valor("modifiedDate")) });
 }
 function renderSchema(){
- const obj=makeSchema();schemaOut.textContent=JSON.stringify(obj,null,2);
- const missing=[!obj.headline&&"título",!obj.author&&"autor",!obj.image&&"imagen pública",!obj.datePublished&&"fecha real de publicación",!obj.mainEntityOfPage&&"URL"].filter(Boolean);
- schemaNote.textContent=(missing.length?"Revisar: "+missing.join(", ")+". ":"Campos recomendados presentes. ")+"La URL del slug puede ser provisional. Exportación únicamente: no se inserta otro Schema en WordPress ni se garantiza un resultado enriquecido.";
- schemaCopy.disabled=schemaDownload.disabled=!obj.headline;
+  const obj = makeSchema(); schemaOut.textContent = JSON.stringify(obj, null, 2);
+  const faltan = [!obj.headline && "título", !obj.author && "autor", !obj.image && "imagen pública", !obj.datePublished && "fecha real de publicación", !obj.mainEntityOfPage && "URL"].filter(Boolean);
+  schemaNote.textContent = (faltan.length ? "Falta: " + faltan.join(", ") + ". " : "Tiene los campos recomendados. ") + "Es solo para revisar o exportar: en el sitio el Schema lo genera Yoast, y aquí no se inserta otro ni se garantiza un resultado enriquecido. La URL sale del slug y es provisional hasta que el artículo esté publicado.";
+  schemaCopy.disabled = schemaDownload.disabled = !obj.headline;
 }
-schemaCopy.onclick=async()=>{schemaCopy.textContent=await copiarTexto(JSON.stringify(makeSchema(),null,2))?"Copiado":"No se pudo";};
-schemaDownload.onclick=()=>{const u=URL.createObjectURL(new Blob([JSON.stringify(makeSchema(),null,2)],{type:"application/ld+json"}));const a=el("a");a.href=u;a.download="article-schema.json";a.click();setTimeout(()=>URL.revokeObjectURL(u),1000);};
-const perf=group("Google Search Console · rendimiento orgánico");
-const perfUrl=el("input");perfUrl.type="url";perfUrl.placeholder="URL publicada exacta";const perfPeriod=el("select");
-for(const n of [7,28,90]){const o=el("option",n+" días");o.value=String(n);perfPeriod.append(o);}perfPeriod.value="28";
-const perfBtn=el("button","Consultar rendimiento","btn ghost small");perfBtn.type="button";
-const perfOut=el("div",null,"adv-status");perf.append(perfUrl,perfPeriod,perfBtn,perfOut);
-let performanceRequest=0;
-function resetPerf(){performanceRequest++;perfBtn.disabled=false;perfOut.replaceChildren();perfUrl.value=current?.wp?.estado==="publish"?(current.wp.enlace||""):"";}
-perfBtn.onclick=async()=>{
- const page=safeUrl(perfUrl.value.trim());if(!page){perfOut.textContent="Introduce la URL publicada exacta.";return;}
- const seq=++performanceRequest,id=current?.id;perfBtn.disabled=true;perfOut.textContent="Consultando Google…";
- try{
- const {data,error}=await sb.functions.invoke("gsc",{body:{page,days:Number(perfPeriod.value)}});
- if(seq!==performanceRequest||current?.id!==id)return;
- let r=data;if(error){try{r=await error.context.json();}catch{}throw Error(r?.error||"No se pudo conectar con la función gsc.");}
- if(!r?.ok)throw Error(r?.error||"Respuesta inválida.");
- perfOut.replaceChildren();perfOut.append(el("p",r.range.current.startDate+" a "+r.range.current.endDate+" · búsqueda web · comparación con periodo anterior","adv-note"));
- if(!r.current){perfOut.append(el("p","No hay filas disponibles para esa URL y periodo. No equivale necesariamente a cero."));return;}
- const labels=[["clicks","Clics"],["impressions","Impresiones"],["ctr","CTR"],["position","Posición media"]];
- const fmt=(k,v)=>typeof v!=="number"?"—":k==="ctr"?(v*100).toFixed(2)+"%":k==="position"?v.toFixed(1):v.toLocaleString("es-MX");
- for(const [k,label] of labels){const a=r.current[k],b=r.previous?.[k];const delta=k==="position"?null:metricDelta(a,b);perfOut.append(el("p",label+": "+fmt(k,a)+" · anterior: "+fmt(k,b)+(delta===null?"":" · "+(delta>=0?"+":"")+delta.toFixed(1)+"% relativo")));}
- perfOut.append(el("strong","Consultas principales"));
- const table=el("table");table.style.width="100%";const head=el("tr");["Consulta","Clics","Impr.","CTR","Pos."].forEach(x=>head.append(el("th",x)));table.append(head);
- for(const q of (r.queries||[]).slice(0,20)){const row=el("tr");[q.keys?.[0]||"",fmt("clicks",q.clicks),fmt("impressions",q.impressions),fmt("ctr",q.ctr),fmt("position",q.position)].forEach(x=>row.append(el("td",x)));table.append(row);}perfOut.append(table);
- perfOut.append(el("p","Google puede omitir consultas anonimizadas o filas. Comparación observacional, no prueba de causalidad.","adv-note"));
- }catch(e){if(seq===performanceRequest&&current?.id===id)perfOut.textContent=e.message||"No disponible";}
- finally{if(seq===performanceRequest)perfBtn.disabled=false;}
+schemaCopy.onclick = copiaEn(schemaCopy, () => JSON.stringify(makeSchema(), null, 2), "Copiar JSON-LD");
+schemaDownload.onclick = () => { const u = URL.createObjectURL(new Blob([JSON.stringify(makeSchema(), null, 2)], { type: "application/ld+json" })), a = el("a"); a.href = u; a.download = "article-schema.json"; document.body.append(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(u), 1000); };
+
+/* --- Historial de versiones del análisis (se guarda con el artículo) --- */
+const gHist = grupo("historial", "Historial de versiones del análisis", false);
+const histNote = el("input"); histNote.placeholder = "Qué cambiaste o qué quieres comprobar (opcional)"; histNote.maxLength = 240;
+const histBtn = boton("Registrar esta versión"), histOut = el("div", null, "avz-res");
+gHist.append(el("p", "Registra una versión antes y otra después de un cambio, y guarda el artículo para conservarlas. Son indicadores editoriales del texto: no miden posiciones en Google ni conversiones.", "note"), histNote, histBtn, histOut);
+let guardado = {}, experiments = [];
+function renderHistory(msg){
+  histOut.replaceChildren(); if (msg) histOut.append(el("p", msg, "note"));
+  for (const x of experiments.slice().reverse()) {
+    const fila = el("div", null, "avz-exp"), f = new Date(x.at);
+    fila.append(el("strong", isNaN(f) ? String(x.at) : f.toLocaleString("es-MX", { dateStyle: "medium", timeStyle: "short" })), el("p", x.note || "Sin nota"), el("p", (x.words | 0) + " palabras · Flesch " + (x.flesch ?? "—") + " · " + (x.matched | 0) + " de " + (x.checks | 0) + " comprobaciones de frases", "note"));
+    histOut.append(fila);
+  }
+}
+histBtn.onclick = () => {
+  const a = analyze(entrada()); if (!a.words) { renderHistory("Escribe el artículo antes de registrar una versión."); return; }
+  experiments = [...experiments, { at: new Date().toISOString(), note: histNote.value.trim(), words: a.words, flesch: a.flesch, matched: a.phrases.reduce((n, p) => n + p.checks.filter(c => c[1]).length, 0), checks: a.phrases.reduce((n, p) => n + p.checks.length, 0) }].slice(-20);
+  histNote.value = ""; app.cambio(); renderHistory("Registrada. Guarda el artículo para conservarla.");
 };
-const history=group("Historial de experimentos SEO");
-const histOut=el("div",null,"adv-status");const histBtn=el("button","Registrar versión de análisis","btn ghost small");histBtn.type="button";
-const histNote=el("input");histNote.placeholder="Hipótesis o cambio realizado (opcional)";histNote.maxLength=240;history.append(histNote,histBtn,histOut);
-let experiments=[];
-function renderHistory(){
- histOut.replaceChildren();
- histOut.append(el("p","Registra una versión antes y después de un cambio. Guarda el artículo para conservar el historial. Los indicadores son editoriales, no rankings ni conversiones.","adv-note"));
- for(const x of experiments.slice().reverse()){
-  const row=el("div",null,"adv-group");
-  row.append(el("strong",new Date(x.at).toLocaleString("es-MX")),el("p",x.note||"Sin hipótesis registrada"),el("p",x.words+" palabras · Flesch "+(x.flesch??"—")+" · "+x.matched+"/"+x.checks+" verificaciones de frases"));
-  histOut.append(row);
- }
+
+/* --- Ajustes técnicos que viajan a WordPress (apagado: el sitio aún no deja escribir esos campos de Yoast desde fuera) --- */
+let technical = null;
+if (ACTIVO.meta) {
+  const g = grupo("tecnico", "Ajustes técnicos para WordPress", false);
+  campo(g, "canonical", "URL canónica", "url"); campo(g, "oldSlug", "Slug anterior (propuesta de redirección; no se crea sola)");
+  campo(g, "applyMeta", "Enviar estos ajustes y los de redes a WordPress (solo mientras sea borrador)", "checkbox");
+  campo(g, "noindex", "Pedir noindex (desmarcarlo después no quita una orden anterior)", "checkbox");
+  technical = el("p", null, "note"); g.append(technical);
 }
-histBtn.onclick=()=>{const d=input(),a=analyze(d);if(!a.words){histOut.textContent="Escribe contenido antes de registrar un experimento.";return;}experiments=[...experiments,{at:new Date().toISOString(),note:histNote.value.trim(),words:a.words,flesch:a.flesch,matched:a.phrases.reduce((n,p)=>n+p.checks.filter(c=>c[1]).length,0),checks:a.phrases.reduce((n,p)=>n+p.checks.length,0)}].slice(-20);histNote.value="";editorDirty=true;renderHistory();};
-const ai=group("Asistencia editorial");const aiOut=el("div",null,"adv-status");const actions=[["meta","Generar metadatos"],["optimize","Proponer mejoras SEO"],["summary","Resumir artículo"],["plan","Planificar contenido"],["inclusive","Revisar lenguaje inclusivo"],["alt","Sugerir textos alternativos"]];
-const btns=el("div");ai.append(btns,aiOut);
-const split=s=>String(s||"").split(",").map(x=>x.trim()).filter(Boolean).slice(0,12);
-const value=k=>fields[k].type==="checkbox"?fields[k].checked:fields[k].value.trim();
-function snapshot(){const o={};Object.keys(fields).forEach(k=>o[k]=value(k));o.experiments=experiments.slice(-20);return o;}
-function restore(o){for(const [k,n] of Object.entries(fields)){if(n.type==="checkbox")n.checked=!!o?.[k];else n.value=o?.[k]??(k==="lang"?"en":"");}aiOut.replaceChildren();experiments=Array.isArray(o?.experiments)?o.experiments.filter(x=>x&&typeof x.at==="string").slice(-20):[];histNote.value="";renderHistory();}
-function input(){const b=esBlogEd()?blLeer(blDoc):[],s=originalRead(),body=esBlogEd()?blTexto(b):"";return {body,title:s.titulo||$("e-copy").value,description:s.desc||"",slug:s.slug||"",headings:b.filter(x=>x.t==="h").map(x=>blPlano(x.x)),paragraphs:b.filter(x=>x.t==="p").map(x=>blPlano(x.x)),images:[s.alt||"",...b.filter(x=>x.t==="img").flatMap(x=>(x.imgs||[]).map(f=>f.alt||""))],phrases:[{term:s.kw||"",synonyms:split(value("syn0"))},...Array.from({length:4},(_,i)=>({term:value("kw"+(i+1)),synonyms:split(value("syn"+(i+1)))}))],lang:value("lang"),cornerstone:value("cornerstone")};}
-function list(parent,items){const ul=el("ul");items.forEach(x=>ul.append(el("li",x)));parent.append(ul);}
-function safeUrl(s){try{const u=new URL(s);return /^https?:$/.test(u.protocol)?u.href:null;}catch{return null;}}
-function render(){
- if(root.classList.contains("hidden"))return;
- const d=input(),a=analyze(d);renderSchema();result.replaceChildren();
- if(!a.phrases.length)result.append(el("p","Define una frase principal para comenzar."));
- for(const p of a.phrases){result.append(el("strong",p.term+" · "+p.count+" apariciones (máximo por variante) · "+p.density.toFixed(1)+"% estimado"));list(result,p.checks.map(([k,v])=>(v?"✓ ":"○ ")+k));}
- readout.replaceChildren();list(readout,[a.words+" palabras · "+a.reading+" min aprox.","Flesch "+(a.flesch??"—")+" (estimación lingüística)","Frases largas: "+a.long+" de "+a.sentences,"Promedio de palabras por frase: "+a.avg.toFixed(1),"Transiciones detectadas: "+a.transition+"%","Párrafos de más de 150 palabras: "+a.longParagraphs,"Posible voz pasiva: "+a.passive+" frases","Palabras destacadas: "+a.prominent.map(([w,n])=>w+" ("+n+")").join(", "),...(a.cornerstone?["Contenido pilar: revisa profundidad, enlaces y actualización periódica."]:[])]);
- links.replaceChildren();const terms=new Set(tokens(d.title+" "+d.body).filter(w=>w.length>4));const candidates=(typeof posts!=="undefined"?posts:[]).filter(p=>p.tipo==="Blog"&&p.id!==current?.id).map(p=>{const t=p.copy||p.seo?.titulo||"",slug=p.seo?.slug;const score=[...new Set(tokens(t+" "+(p.seo?.kw||"")+" "+(p.seo?.tags||"")))].filter(x=>terms.has(x)).length;return {t,slug,score};}).filter(x=>x.slug&&x.score>0).sort((a,b)=>b.score-a.score).slice(0,5);
- links.append(el("p","Sugerencias de la biblioteca local; no comprueban publicación ni existencia de la URL.","adv-note"));
- if(!candidates.length)links.append(el("p","No hay coincidencias suficientes."));
- for(const c of candidates){const row=el("div",null,"adv-row");row.append(el("span",c.t));const b=el("button","Copiar URL","btn ghost small");b.type="button";b.onclick=async()=>{const ok=await copiarTexto("https://www.yucatanlove.com/"+encodeURIComponent(c.slug)+"/");b.textContent=ok?"Copiado":"No se pudo";};row.append(b);links.append(row);}
- const local=(typeof posts!=="undefined"?posts:[]).filter(p=>p.tipo==="Blog"&&p.id!==current?.id);
- const primary=d.phrases[0].term;const conflicts=primary?local.filter(p=>norm(p.seo?.kw).trim()===norm(primary).trim()):[];
- if(conflicts.length){links.append(el("strong","Posible canibalización de palabra clave"));list(links,conflicts.map(p=>p.copy||p.seo?.titulo||"Sin título"));}
- const slug=d.slug; if(slug){const incoming=local.filter(p=>JSON.stringify(p.cuerpo||[]).includes("/"+slug+"/")).length;links.append(el("p","Enlaces entrantes detectados en borradores locales: "+incoming+" (no equivale a auditoría del sitio publicado).","adv-note"));}
- preview.replaceChildren();const url=safeUrl(value("socialImage"));if(url){const im=el("img");im.src=url;im.alt="Vista previa social";im.referrerPolicy="no-referrer";preview.append(im);}
- preview.append(el("small","Facebook · YUCATANLOVE.COM · vista aproximada"),el("strong",value("socialTitle")||d.title),el("p",value("socialDescription")||d.description),el("hr"),el("small","X · tarjeta aproximada"),el("strong",value("socialTitle")||d.title),el("p",value("socialDescription")||d.description));
- technical.textContent=(value("canonical")&&!safeUrl(value("canonical"))?"URL canónica inválida. ":"")+(value("oldSlug")&&value("oldSlug")!==d.slug?"Redirección propuesta: "+value("oldSlug")+" → "+d.slug+". ":"")+"Los campos avanzados compatibles solo se intentan enviar si autorizas el envío y la entrada está en borrador. Schema y redirecciones siguen siendo propuestas. El ajuste noindex nunca se aplica a una entrada publicada.";
+
+/* --- Auditoría de enlaces del sitio publicado (apagado hasta desplegar esa parte de la función wp; solo quien administra) --- */
+let auditData = null, renderAudit = () => {};
+if (ACTIVO.auditoria) {
+  const g = grupo("auditoria", "Auditoría de enlaces del sitio publicado", false), auditButton = boton("Consultar el sitio"), auditOut = el("div", null, "avz-res"); g.append(auditButton, auditOut);
+  let ocupado = false;
+  renderAudit = () => {
+    auditOut.replaceChildren(); if (!auditData) return;
+    const d = entrada(), r = auditData, items = r.articulos || [], f = new Date(r.fecha);
+    auditOut.append(el("p", "Se leyeron " + items.length + " entradas y páginas publicadas" + (isNaN(f) ? "" : " · " + f.toLocaleString("es-MX", { dateStyle: "medium", timeStyle: "short" })), "note"));
+    for (const [k, v] of Object.entries(r.cobertura || {})) auditOut.append(el("p", (k === "posts" ? "Entradas" : k === "pages" ? "Páginas" : k) + ": " + (v.leidos | 0) + " de " + (v.total ?? "?") + (v.completa ? " (todas)" : " (lectura parcial)"), "note"));
+    auditOut.append(el("p", "Cuenta los enlaces que hay dentro del texto de esas entradas y páginas; no ve menús, pies de página ni otros tipos de contenido. No es un rastreo completo del sitio.", "note"));
+    const termSet = new Set(tokens(d.title + " " + d.phrases.map(p => p.term).join(" ")).filter(x => x.length > 3));
+    const relevant = items.filter(p => safeUrl(p.url) && p.slug !== d.slug).map(p => ({ ...p, score: [...new Set(tokens(p.titulo + " " + p.slug))].filter(t => termSet.has(t)).length })).filter(p => p.score > 0).sort((a, b) => b.score - a.score).slice(0, 8);
+    auditOut.append(el("strong", "Artículos publicados que conviene enlazar"));
+    for (const p of relevant) { const u = safeUrl(p.url), fila = el("div", null, "avz-enl"), a = el("a", p.titulo || p.slug), c = boton("Copiar enlace"); a.href = u; a.target = "_blank"; a.rel = "noopener noreferrer"; c.onclick = copiaEn(c, () => u, "Copiar enlace"); fila.append(a, c); auditOut.append(fila); }
+    if (!relevant.length) auditOut.append(el("p", "No hay coincidencias suficientes con el título y las frases de este artículo."));
+    const sueltos = items.filter(p => p.entrantes === 0); auditOut.append(el("strong", "Sin enlaces entrantes en la muestra: " + sueltos.length));
+    if (sueltos.length) lista(auditOut, sueltos.slice(0, 15).map(p => p.titulo || p.slug));
+    const este = items.find(p => p.slug === d.slug); if (este) auditOut.append(el("p", "Este artículo: " + este.entrantes + " páginas lo enlazan y él enlaza a " + este.salientes + "."));
+  };
+  auditButton.onclick = async () => {
+    if (ocupado) return; ocupado = true; auditButton.disabled = true; auditOut.replaceChildren(el("p", "Leyendo el contenido publicado…", "note"));
+    try { const r = await servidor("wp", { accion: "auditoria_seo" }); if (!r.ok || !Array.isArray(r.articulos)) throw Error(r.error || "La auditoría no está disponible."); auditData = r; renderAudit(); }
+    catch (e) { auditData = null; auditOut.replaceChildren(el("p", e.message || "No disponible", "note")); }
+    finally { ocupado = false; auditButton.disabled = false; }
+  };
 }
-const originalRead=seoLeer,originalLoad=seoCargar,originalRender=seoPintar;
-seoLeer=function(){const s=originalRead();if($("e-tipo").value==="Blog")s.advanced=snapshot();return s;};
-seoCargar=function(p){restore(p?.seo?.advanced||{});originalLoad(p);resetPerf();render();if(auditData)renderAudit();};
-seoPintar=function(){originalRender();render();};
-panel.addEventListener("input",()=>{editorDirty=true;render();});
-for(const [action,label] of actions){const b=el("button",label,"btn ghost small");b.type="button";btns.append(b);b.onclick=async()=>{
- const d=input(),id=current?.id;if(!d.body.trim()&&action!=="plan"){aiOut.textContent="Escribe el artículo primero.";return;}
- b.disabled=true;aiOut.textContent="Solicitando sugerencias…";
- try{
- const prompts={meta:"Genera 3 opciones de título SEO y descripción, sin inventar datos.",optimize:"Identifica mejoras concretas y propone reemplazos de fragmentos; conserva hechos y estilo.",summary:"Resume el artículo en 3 puntos.",plan:"Propón 5 ideas y un esquema editorial para bodas destino en Yucatán.",inclusive:"Señala lenguaje potencialmente excluyente y alternativas contextualizadas.",alt:"Propón mejoras para los textos alternativos existentes. No describas imágenes que no puedas ver."};
- const {data,error}=await sb.functions.invoke("ia",{body:{accion:"pulir_caption",post:{tipo:"Blog",copy:d.title,caption:(d.body||d.title||"Destination weddings in Yucatán").slice(0,18000)},idioma:d.lang,instruccion:prompts[action]+" Palabras clave: "+d.phrases.map(p=>p.term).join(", ")}});
- if(current?.id!==id)return;
- if(error||!data||data.error||!Array.isArray(data.opciones)||!data.opciones.length)throw new Error("El asistente existente no devolvió sugerencias válidas.");
- aiOut.replaceChildren();for(const option of data.opciones){if(typeof option!=="string")continue;const p=el("p",option);p.style.whiteSpace="pre-wrap";aiOut.append(p);const c=el("button","Copiar sugerencia","btn ghost small");c.type="button";c.onclick=()=>copiarTexto(option);aiOut.append(c);}aiOut.append(el("p","Revisa antes de aplicar. La respuesta depende del asistente de Supabase existente.","adv-note"));
- }catch(e){if(current?.id===id)aiOut.textContent=e.message||"No disponible";}finally{b.disabled=false;}
-};}
+
+/* --- Google Search Console (apagado hasta desplegar la función gsc y darle acceso; solo quien administra) --- */
+let resetPerf = () => {};
+if (ACTIVO.gsc) {
+  const g = grupo("gsc", "Google Search Console · rendimiento", false);
+  const perfUrl = el("input"); perfUrl.type = "url"; perfUrl.placeholder = "Dirección publicada exacta del artículo";
+  const perfPeriod = el("select"); for (const n of [7, 28, 90]) { const o = el("option", "Últimos " + n + " días"); o.value = String(n); perfPeriod.append(o); } perfPeriod.value = "28";
+  const perfBtn = boton("Consultar"), perfOut = el("div", null, "avz-res"); g.append(perfUrl, perfPeriod, perfBtn, perfOut);
+  let turno = 0;
+  resetPerf = () => { turno++; perfBtn.disabled = false; perfOut.replaceChildren(); perfUrl.value = app.urlPublicada() || ""; };
+  perfBtn.onclick = async () => {
+    const page = safeUrl(perfUrl.value); if (!page) { perfOut.replaceChildren(el("p", "Escribe la dirección publicada exacta del artículo.", "note")); return; }
+    const yo = ++turno, id = (app.post() || {}).id; perfBtn.disabled = true; perfOut.replaceChildren(el("p", "Consultando a Google…", "note"));
+    const vigente = () => yo === turno && (app.post() || {}).id === id;   // si cambió de artículo o volvió a consultar, esta respuesta ya no se pinta
+    try {
+      const r = await servidor("gsc", { page, days: Number(perfPeriod.value) }); if (!vigente()) return;
+      if (!r.ok || !r.range || !r.range.current) throw Error(r.error || "Respuesta inválida.");
+      perfOut.replaceChildren(el("p", r.range.current.startDate + " a " + r.range.current.endDate + " · búsqueda web · frente al periodo anterior de igual duración", "note"));
+      if (!r.current) { perfOut.append(el("p", "Google no devolvió filas para esa dirección y ese periodo. No significa necesariamente cero.")); return; }
+      const fmt = (k, v) => typeof v !== "number" ? "—" : k === "ctr" ? (v * 100).toFixed(2) + " %" : k === "position" ? v.toFixed(1) : v.toLocaleString("es-MX");
+      for (const [k, rotulo] of [["clicks", "Clics"], ["impressions", "Impresiones"], ["ctr", "CTR"], ["position", "Posición media"]]) {
+        const a = r.current[k], b = r.previous ? r.previous[k] : undefined, delta = k === "position" || k === "ctr" ? null : metricDelta(a, b);
+        perfOut.append(el("p", rotulo + ": " + fmt(k, a) + " · antes: " + fmt(k, b) + (delta === null ? "" : " · " + (delta >= 0 ? "+" : "") + delta.toFixed(1) + " %")));
+      }
+      perfOut.append(el("strong", "Consultas principales"));
+      const tabla = el("table", null, "avz-tabla"), cabeza = el("tr"); ["Consulta", "Clics", "Impr.", "CTR", "Pos."].forEach(x => cabeza.append(el("th", x))); tabla.append(cabeza);
+      for (const q of (Array.isArray(r.queries) ? r.queries : []).slice(0, 20)) { const fila = el("tr"); [(q.keys && q.keys[0]) || "", fmt("clicks", q.clicks), fmt("impressions", q.impressions), fmt("ctr", q.ctr), fmt("position", q.position)].forEach(x => fila.append(el("td", x))); tabla.append(fila); }
+      perfOut.append(tabla, el("p", "Google puede omitir consultas anónimas o filas. Es una comparación de dos periodos: no prueba que un cambio haya causado la diferencia.", "note"));
+    } catch (e) { if (vigente()) perfOut.replaceChildren(el("p", e.message || "No disponible", "note")); }
+    finally { if (yo === turno) perfBtn.disabled = false; }
+  };
+}
+
+/* --- Asistente editorial (apagado: la función ia de hoy solo pule captions de Instagram; necesita su acción «seo» y una clave de IA) --- */
+let aiOut = null;
+if (ACTIVO.ia) {
+  const g = grupo("ia", "Asistente editorial", false), btns = el("div", null, "actions"); aiOut = el("div", null, "avz-res"); g.append(btns, aiOut);
+  for (const [tarea, rotulo] of [["meta", "Proponer título y descripción"], ["mejoras", "Proponer mejoras de SEO"], ["resumen", "Resumir el artículo"], ["plan", "Planear contenido relacionado"], ["inclusivo", "Revisar lenguaje inclusivo"], ["alt", "Mejorar textos alternativos"]]) {
+    const b = boton(rotulo); btns.append(b);
+    b.onclick = async () => {
+      const d = entrada(), id = (app.post() || {}).id; if (!d.body.trim() && tarea !== "plan") { aiOut.replaceChildren(el("p", "Escribe el artículo primero.", "note")); return; }
+      b.disabled = true; aiOut.replaceChildren(el("p", "Pidiendo sugerencias…", "note"));
+      try {
+        const r = await servidor("ia", { accion: "seo", tarea, idioma: d.lang, frases: d.phrases.map(p => p.term).filter(Boolean), post: { tipo: "Blog", copy: d.h1 || d.title, caption: d.body.slice(0, 24000), alts: d.images.filter(Boolean).slice(0, 30) } });
+        if ((app.post() || {}).id !== id) return;
+        if (r.error || !Array.isArray(r.opciones) || !r.opciones.length) throw Error(/acci[oó]n no v[aá]lida/i.test(r.error || "") ? "El asistente de SEO todavía no está instalado en el servidor." : r.error || "El asistente no devolvió sugerencias.");
+        aiOut.replaceChildren();
+        for (const op of r.opciones) { if (typeof op !== "string") continue; const p = el("p", op), c = boton("Copiar"); p.style.whiteSpace = "pre-wrap"; c.onclick = copiaEn(c, () => op, "Copiar"); aiOut.append(p, c); }
+        aiOut.append(el("p", "Son sugerencias: revísalas antes de usarlas. Nada se aplica ni se publica solo.", "note"));
+      } catch (e) { if ((app.post() || {}).id === id) aiOut.replaceChildren(el("p", e.message || "No disponible", "note")); }
+      finally { b.disabled = false; }
+    };
+  }
+}
+
+/* --- Leer, restaurar y pintar --- */
+// Lo que se guarda en seo.advanced: solo lo que tiene valor. Parte de lo ya guardado (un campo que hoy no se muestra no se
+// pierde) y encima va lo que hay en pantalla; lo que se vació o está en su valor de inicio no se guarda.
+const INICIO = { lang: "en", schema: "BlogPosting" };
+function snapshot(){
+  const o = Object.assign({}, guardado);
+  Object.keys(fields).forEach(k => { const v = valor(k); if (v === "" || v === false || v === INICIO[k]) delete o[k]; else o[k] = v; });
+  if (experiments.length) o.experiments = experiments.slice(-20); else delete o.experiments;
+  return o;
+}
+function restore(o){
+  guardado = o && typeof o === "object" && !Array.isArray(o) ? Object.assign({}, o) : {};
+  for (const [k, n] of Object.entries(fields)) { if (n.type === "checkbox") n.checked = guardado[k] === true; else n.value = typeof guardado[k] === "string" ? guardado[k] : ""; }
+  if (fields.lang.value !== "es") fields.lang.value = "en"; if (!fields.schema.value) fields.schema.value = "BlogPosting";
+  experiments = Array.isArray(guardado.experiments) ? guardado.experiments.filter(x => x && typeof x.at === "string").slice(-20) : [];
+  relacionadas.open = [1, 2, 3, 4].some(i => guardado["kw" + i] || guardado["syn" + i]);
+  histNote.value = ""; renderHistory(); if (aiOut) aiOut.replaceChildren(); resetPerf();
+}
+// ctx: lo que el editor ya leyó al repintar ({ cuerpo, seo }), para no leer el artículo dos veces
+function entrada(ctx){
+  const b = ctx && Array.isArray(ctx.cuerpo) ? ctx.cuerpo : (app.esBlog() ? app.bloques() : []), s = (ctx && ctx.seo) || app.base();
+  return { cuerpo: b, body: app.texto(b), title: s.titulo || app.h1(), h1: app.h1(), description: s.desc || "", slug: s.slug || "",
+    headings: b.filter(x => x && x.t === "h").map(x => app.plano(x.x)), paragraphs: b.filter(x => x && x.t === "p").map(x => app.plano(x.x)),
+    images: [s.alt || "", ...b.filter(x => x && x.t === "img").flatMap(x => (x.imgs || []).map(f => (f && f.alt) || ""))],
+    phrases: [{ term: s.kw || "", synonyms: split(valor("syn0")) }, ...[1, 2, 3, 4].map(i => ({ term: valor("kw" + i), synonyms: split(valor("syn" + i)) }))],
+    lang: valor("lang"), cornerstone: valor("cornerstone") };
+}
+function render(ctx){
+  if (root.classList.contains("hidden") || !panel.open) return;   // plegado o fuera de un Blog: no calcula nada
+  const admin = !!app.esAdmin(); for (const k of ["auditoria", "gsc"]) if (grupos[k]) grupos[k].classList.toggle("hidden", !admin);
+  const d = entrada(ctx), a = analyze(d);
+  if (grupos.frases.open) {
+    result.replaceChildren();
+    if (!a.phrases.length) result.append(el("p", "Escribe arriba la «Palabra clave principal» para empezar.", "note"));
+    for (const p of a.phrases) { result.append(el("strong", p.term + " · " + p.count + (p.count === 1 ? " vez" : " veces") + " en el texto · " + p.density.toFixed(1) + " %")); lista(result, p.checks.map(([k, v]) => [v, k]), "seo-chk"); }
+  }
+  if (grupos.lectura.open) {
+    readout.replaceChildren();
+    if (!a.words) readout.append(el("p", "Escribe el artículo para ver su legibilidad.", "note"));
+    else {
+      const pct = n => a.sentences ? Math.round(100 * n / a.sentences) : 0, facil = a.flesch >= 60 ? "fácil de leer" : a.flesch >= 30 ? "algo difícil" : "difícil";
+      lista(readout, [
+        [a.flesch >= 60, "Facilidad de lectura (Flesch): " + a.flesch + " de 100, " + facil],
+        [pct(a.long) <= 25, "Frases largas: " + a.long + " de " + a.sentences + " (" + pct(a.long) + " %; conviene no pasar de 25 %)"],
+        [a.transition >= 30, "Frases con palabras de transición: " + a.transition + " % (conviene 30 % o más)"],
+        [a.longParagraphs === 0, "Párrafos de más de 150 palabras: " + a.longParagraphs],
+        [pct(a.passive) <= 10, "Posible voz pasiva: " + a.passive + " frases (" + pct(a.passive) + " %; conviene no pasar de 10 %)"],
+      ], "seo-chk avz-1");
+      lista(readout, ["Promedio: " + a.avg.toFixed(1) + " palabras por frase", "Palabras más usadas: " + (a.prominent.map(([x, n]) => x + " (" + n + ")").join(", ") || "—"), ...(a.cornerstone ? ["Contenido pilar: revisa que sea de los más completos, que otros artículos lo enlacen y que se actualice cada cierto tiempo."] : [])]);
+      readout.append(el("p", "Son guías editoriales calculadas sobre los párrafos; no equivalen a la puntuación de Yoast.", "note"));
+    }
+  }
+  if (grupos.enlaces.open) {
+    links.replaceChildren();
+    const yo = (app.post() || {}).id, otros = (app.posts() || []).filter(p => p && p.tipo === "Blog" && p.id !== yo), mio = JSON.stringify(d.cuerpo);
+    const terms = new Set(tokens(d.title + " " + d.body).filter(x => x.length > 4));
+    const cand = otros.map(p => { const t = p.copy || (p.seo && p.seo.titulo) || "", slug = p.seo && p.seo.slug, s = p.seo || {}; return { t, slug, score: [...new Set(tokens(t + " " + (s.kw || "") + " " + (s.tags || "")))].filter(x => terms.has(x)).length }; }).filter(x => x.slug && x.score > 0).sort((x, y) => y.score - x.score).slice(0, 5);
+    links.append(el("p", "Artículos de la parrilla que tratan temas parecidos. Aquí no se comprueba que ya estén publicados en el sitio.", "note"));
+    if (!cand.length) links.append(el("p", "Todavía no hay otros artículos con temas en común."));
+    for (const c of cand) { const u = SITIO + encodeURIComponent(c.slug) + "/", fila = el("div", null, "avz-enl"), ya = mio.includes("/" + c.slug + "/"), b = boton("Copiar URL"); b.onclick = copiaEn(b, () => u, "Copiar URL"); fila.append(el("span", (ya ? "✓ ya enlazado · " : "") + c.t), b); links.append(fila); }
+    const principal = d.phrases[0].term, clave = t => words(t, d.lang).join(" "), choque = principal ? otros.filter(p => p.seo && p.seo.kw && clave(p.seo.kw) === clave(principal)) : [];
+    if (choque.length) { links.append(el("strong", "Otro artículo usa la misma palabra clave principal")); lista(links, choque.map(p => p.copy || (p.seo && p.seo.titulo) || "Sin título")); links.append(el("p", "Si los dos buscan lo mismo pueden competir entre sí en Google: conviene diferenciarlos.", "note")); }
+    if (d.slug) links.append(el("p", "Artículos de la parrilla que enlazan a este: " + entrantes(d.slug, otros) + ".", "note"));
+  }
+  if (grupos.redes.open) {
+    preview.replaceChildren(); const img = safeUrl(valor("socialImage")), c = el("div");
+    if (img) { const im = el("img"); im.src = img; im.alt = ""; im.referrerPolicy = "no-referrer"; im.loading = "lazy"; preview.append(im); }
+    c.append(el("small", "yucatanlove.com"), el("b", valor("socialTitle") || d.title || "Título del artículo"), el("span", valor("socialDescription") || d.description || "Descripción del artículo")); preview.append(c);
+  }
+  if (grupos.schema.open) renderSchema();
+  if (technical) technical.textContent = (valor("canonical") && !safeUrl(valor("canonical")) ? "La URL canónica no es válida. " : "") + (valor("oldSlug") && valor("oldSlug") !== d.slug ? "Redirección propuesta: " + valor("oldSlug") + " → " + d.slug + ". " : "") + "Solo se intentan enviar si marcas la casilla y la entrada sigue en borrador; noindex nunca se aplica a una entrada publicada.";
+  if (grupos.auditoria && grupos.auditoria.open && auditData) renderAudit();
+}
+panel.addEventListener("toggle", () => { recuerda("seoAvzAbierto", panel.open ? "1" : "0"); render(); });
+panel.addEventListener("input", e => { if (e.target && e.target.dataset && e.target.dataset.avz) app.cambio(); render(); });
+app.registrar({ leer: () => { const o = snapshot(); return Object.keys(o).length ? o : null; }, cargar: p => restore(p && p.seo && p.seo.advanced), pintar: render });
 })();

@@ -1877,8 +1877,32 @@ const SEO_K = { titulo: "seo-titulo", desc: "seo-desc", slug: "seo-slug", kw: "s
 const slugify = s => String(s || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().replace(/&/g, " and ").replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").replace(/-+/g, "-").slice(0, 75).replace(/-+$/, "");
 const palabras = t => (String(t || "").trim().match(/\S+/g) || []).length;
 const minLectura = t => Math.max(1, Math.round(palabras(t) / 200));
-function seoLeer(){ const o = {}; Object.entries(SEO_K).forEach(([k, id]) => { const v = $(id).value.trim(); if (v) o[k] = k === "slug" ? slugify(v) : v; }); const c = catDe(o.cat); if (c) o.catId = c[0]; return o; }
-function seoCargar(p){ const s = (p && p.seo) || {}; Object.entries(SEO_K).forEach(([k, id]) => { $(id).value = s[k] || ""; }); seoToggle(); seoPintar(); }
+function seoBase(){ const o = {}; Object.entries(SEO_K).forEach(([k, id]) => { const v = $(id).value.trim(); if (v) o[k] = k === "slug" ? slugify(v) : v; }); const c = catDe(o.cat); if (c) o.catId = c[0]; return o; }
+/* --- SEO avanzado (seo-advanced.js) ---
+   Su motor y su panel viven en otro archivo, que se prueba aparte con Node. Como aquí todo es privado, se le presta solo lo que
+   necesita del editor mediante este puente, y él se registra al cargar. Si ese archivo no carga o falla, el editor sigue igual
+   y lo que ya estuviera guardado en seo.advanced se conserva tal cual (nunca se pierde por un fallo del módulo). */
+let seoAvz = null;
+function seoAvzLlama(que, dato){ if (!seoAvz) return undefined; try { return seoAvz[que](dato); } catch (e) { console.error("SEO avanzado:", e); return undefined; } }
+function seoLeer(){
+  const o = seoBase();
+  if ($("e-tipo").value === "Blog") {
+    const a = seoAvzLlama("leer");   // objeto = guardarlo · null = no hay nada que guardar · undefined = el módulo no está o falló
+    if (a) o.advanced = a; else if (a === undefined && current && current.seo && current.seo.advanced) o.advanced = current.seo.advanced;
+  }
+  return o;
+}
+function seoCargar(p){ const s = (p && p.seo) || {}; Object.entries(SEO_K).forEach(([k, id]) => { $(id).value = s[k] || ""; }); seoAvzLlama("cargar", p); seoToggle(); seoPintar(); }
+window.APPCONTYL_SEO = Object.freeze({
+  registrar(m){ if (seoAvz || !m || typeof m.leer !== "function" || typeof m.cargar !== "function" || typeof m.pintar !== "function") return; seoAvz = m; if (current) { seoAvzLlama("cargar", current); seoPintar(); } },
+  post: () => current, posts: () => posts, esAdmin: () => esAdmin,
+  esBlog: () => esBlogEd(), bloques: () => blLeer(blDoc), texto: c => blTexto(c), plano: x => blPlano(x),
+  h1: () => $("e-copy").value.trim(), base: () => seoBase(),
+  cambio(){ editorDirty = true; }, copiar: t => copiarTexto(t),
+  invocar: (fn, body) => ["wp", "gsc", "ia"].includes(fn) ? sb.functions.invoke(fn, { body }) : Promise.resolve({ data: null, error: new Error("Función no permitida") }),
+  // Dirección pública del artículo, solo si ya consta como publicado en WordPress
+  urlPublicada(){ const w = current && current.wp; return w && w.estado === "publish" && /^https:\/\/[^\s"<>]+$/.test(w.enlace || "") ? w.enlace : ""; },
+});
 function seoToggle(){ $("seo-box").classList.toggle("hidden", $("e-tipo").value !== "Blog"); }
 function seoPintar(){
   const cuerpo = esBlogEd() ? blLeer(blDoc) : [];
@@ -1915,6 +1939,7 @@ function seoPintar(){
   ];
   $("seo-chk").innerHTML = checks.map(([ok, t]) => `<li class="${ok ? "ok" : ""}">${ok ? "✓" : "○"} ${esc(t)}</li>`).join("") + `<li class="info">⏱ ${minLectura(body)} min de lectura · ${pals} palabras</li>`;
   seoAyudas(s);
+  seoAvzLlama("pintar", { cuerpo, seo: s });
 }
 // Debajo de Categoría: en qué parte del sitio queda (o aviso si no existe). Debajo de Etiquetas: las que ya existen, para elegirlas con un clic.
 function seoAyudas(s){
