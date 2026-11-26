@@ -84,6 +84,106 @@ const errWP = (d, r) => d && d.code === "incorrect_password" || r.status === 401
   : r.status === 404 ? "WordPress no respondió en la dirección del sitio (puede que un plugin de seguridad esté bloqueando su API)."
   : `WordPress respondió con un error (${(d && d.message) || r.status}).`;
 
+// Auditoría acotada a entradas y páginas publicadas devueltas por la API REST.
+export function grafoSEO(items, sitio) {
+  const origen = new URL(sitio);
+  const canon = (raw, base) => {
+    try {
+      const u = new URL(sinEnt(raw), base);
+      if (!/^https?:$/.test(u.protocol) || u.hostname.replace(/^www\./i,"") !== origen.hostname.replace(/^www\./i,"")) return "";
+      return u.pathname.replace(/\/+$/, "") || "/";
+    } catch { return ""; }
+  };
+  const nodos = items.filter(x => x && x.link && canon(x.link, sitio)).map(x => ({
+    id: x.id, tipo: x.type, url: x.link, key: canon(x.link, sitio), slug: x.slug,
+    titulo: sinEnt(String(x.title?.rendered || "").replace(/<[^>]+>/g,"")).slice(0,250),
+    html: String(x.content?.rendered || ""), fecha: x.modified || "",
+  }));
+  const byKey = new Map(nodos.map(n => [n.key,n]));
+  const incoming = new Map(nodos.map(n=>[n.key,new Set()]));
+  return nodos.map(n=>{
+    const targets = new Set();
+    for (const m of n.html.matchAll(/<a\b[^>]*\bhref\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s>]+))/gi)) {
+      const href=m[1]??m[2]??m[3]??"";
+      if(!href || href.startsWith("#") || href.startsWith("?"))continue;
+      const k=canon(href,n.url);
+      if(k && k!==n.key && byKey.has(k)){targets.add(k);incoming.get(k).add(n.key);}
+    }
+    n.salientes=targets.size;
+    return n;
+  }).map(({html,key,...n})=>({...n,entrantes:incoming.get(key).size}));
+}
+
+// Lee las entradas y páginas publicadas (de 50 en 50, hasta `paginas` páginas por tipo) y arma el grafo de enlaces.
+// Si una petición falla, tarda demasiado o se acaba el tiempo total, se queda con lo leído hasta ahí y lo declara
+// como lectura parcial: nunca tumba la consulta entera. Solo usa GET.
+export async function auditarSitio(wp, sitio, { paginas = 6, espera = 20000, limite = 100000 } = {}) {
+  const items = [], cobertura = {}, t0 = Date.now();
+  for (const tipo of ["posts", "pages"]) {
+    let total = null, totalPages = 1, leidos = 0, error = false;
+    for (let page = 1; page <= Math.min(totalPages, paginas); page++) {
+      if (Date.now() - t0 > limite) { error = true; break; }
+      let r = null, arr = null;
+      try { r = await wp(`/${tipo}?status=publish&per_page=50&page=${page}&_fields=id,type,link,slug,title,content,modified`, { signal: AbortSignal.timeout(espera) }); arr = r.ok ? await r.json() : null; } catch (_) { arr = null; }
+      if (!r || !r.ok || !Array.isArray(arr)) { error = true; break; }
+      const rawTotal = r.headers.get("X-WP-Total"), rawPages = r.headers.get("X-WP-TotalPages");
+      total = rawTotal !== null && Number.isFinite(Number(rawTotal)) ? Number(rawTotal) : null;
+      totalPages = rawPages !== null ? Math.max(1, Number(rawPages) || 1) : 1;
+      items.push(...arr); leidos += arr.length;
+    }
+    cobertura[tipo] = { leidos, total, completa: !error && total !== null && leidos >= total, error };
+  }
+  return { cobertura, articulos: grafoSEO(items, sitio) };
+}
+
+// Metadatos opcionales de Yoast (redes, canónica, noindex). Solo se intentan si el artículo lo pide (applyMeta), solo en
+// una entrada que sigue en borrador y solo con las claves que este WordPress deja escribir por su API; después se
+// comprueba que WordPress las devolvió igual. Regresa qué quedó confirmado, qué no, y los avisos para la persona.
+const META_SEO = {
+  "_yoast_wpseo_opengraph-title": "título para redes", "_yoast_wpseo_twitter-title": "título para redes",
+  "_yoast_wpseo_opengraph-description": "descripción para redes", "_yoast_wpseo_twitter-description": "descripción para redes",
+  "_yoast_wpseo_opengraph-image": "imagen para redes", "_yoast_wpseo_twitter-image": "imagen para redes",
+  "_yoast_wpseo_canonical": "URL canónica", "_yoast_wpseo_meta-robots-noindex": "noindex",
+};
+export async function metaAvanzada(adv, entrada, wp, wpJson) {
+  const out = { guardados: [], pendientes: [] }, avisos = [];
+  if (!adv || adv.applyMeta !== true || !entrada || !entrada.id) return { seoAvanzado: out, avisos };
+  const http = (v) => { try { const u = new URL(String(v || "")); return /^https?:$/.test(u.protocol) && !u.username && !u.password ? u.href : ""; } catch { return ""; } };
+  const pedido = {};
+  for (const [k, v] of Object.entries({
+    "_yoast_wpseo_opengraph-title": adv.socialTitle, "_yoast_wpseo_twitter-title": adv.socialTitle,
+    "_yoast_wpseo_opengraph-description": adv.socialDescription, "_yoast_wpseo_twitter-description": adv.socialDescription,
+    "_yoast_wpseo_opengraph-image": http(adv.socialImage), "_yoast_wpseo_twitter-image": http(adv.socialImage),
+    "_yoast_wpseo_canonical": http(adv.canonical),
+  })) if (typeof v === "string" && v.trim()) pedido[k] = v.trim().slice(0, 500);
+  if (adv.noindex === true) pedido["_yoast_wpseo_meta-robots-noindex"] = "1";
+  if (adv.canonical && !http(adv.canonical)) avisos.push("La URL canónica no es válida: no se envió.");
+  if (adv.socialImage && !http(adv.socialImage)) avisos.push("La dirección de la imagen para redes no es válida: no se envió.");
+  const nombres = (l) => [...new Set(l.map((k) => META_SEO[k] || k))].join(", ");
+  if (!Object.keys(pedido).length) return { seoAvanzado: out, avisos };
+  if (entrada.status !== "draft") {   // una entrada publicada (o programada) no se toca
+    out.pendientes = Object.keys(pedido);
+    avisos.push(`Los ajustes de redes y técnicos (${nombres(out.pendientes)}) solo se envían mientras la entrada es borrador; esta ya no lo es.`);
+    return { seoAvanzado: out, avisos };
+  }
+  const opt = await wp("/posts/" + entrada.id, { method: "OPTIONS" }).catch(() => null);
+  const spec = opt && opt.ok ? await opt.json().catch(() => ({})) : {};
+  const props = (spec && spec.schema && spec.schema.properties && spec.schema.properties.meta && spec.schema.properties.meta.properties) || {};
+  const compatible = {};
+  for (const [k, v] of Object.entries(pedido)) {
+    const t = props[k] && props[k].type;
+    if (props[k] && !props[k].readonly && (t === "string" || (Array.isArray(t) && t.includes("string")))) compatible[k] = v; else out.pendientes.push(k);
+  }
+  if (Object.keys(compatible).length) {
+    const rr = await wpJson("/posts/" + entrada.id, { meta: compatible }).catch(() => null);
+    const dd = rr && rr.ok ? await rr.json().catch(() => ({})) : {};
+    for (const [k, v] of Object.entries(compatible)) { if (dd && dd.meta && String(dd.meta[k]) === v) out.guardados.push(k); else out.pendientes.push(k); }
+  }
+  if (out.pendientes.length) avisos.push(`WordPress no dejó guardar desde aquí: ${nombres(out.pendientes)}. Se copian a mano en el panel de Yoast del artículo.`);
+  if (out.guardados.length) avisos.push(`Guardado en el borrador de WordPress: ${nombres(out.guardados)}. Revisa cómo sale al publicarlo.`);
+  return { seoAvanzado: out, avisos };
+}
+
 export async function manejar(req, env) {
   if (req.method === "OPTIONS") return new Response("ok", { headers: CORS });
   if (req.method !== "POST") return json({ error: "Método no permitido" }, 405);
@@ -106,6 +206,10 @@ export async function manejar(req, env) {
       if (!r.ok) return json({ conectado: false, error: errWP(d, r) });
       const c = d.capabilities || {};
       return json({ conectado: true, usuario: d.name || U, sitio: WP, puede: { borradores: !!c.edit_posts, fotos: !!c.upload_files, publicar: !!c.publish_posts, formato: !!c.unfiltered_html } });
+    }
+    if (b.accion === "auditoria_seo") {   // solo lectura de lo ya publicado; no modifica nada en WordPress
+      const a = await auditarSitio(wp, WP);
+      return json({ ok: true, cobertura: a.cobertura, articulos: a.articulos, fecha: new Date().toISOString() });
     }
     if (b.accion !== "enviar") return json({ error: "Acción no válida" }, 400);
     // 3) El artículo
@@ -171,9 +275,11 @@ export async function manejar(req, env) {
     if (!r.ok || !d.id) return json({ error: errWP(d, r), avisos }, 502);
     const yoast = !!(d.meta && Object.prototype.hasOwnProperty.call(d.meta, "_yoast_wpseo_metadesc"));
     if (!yoast && (seo.titulo || seo.desc || seo.kw)) avisos.push("El título SEO, la meta descripción y la palabra clave no se pudieron escribir en Yoast desde aquí; se copian a mano en el panel de Yoast del artículo.");
+    // 6b) Metadatos opcionales (redes, canónica, noindex): solo si el artículo lo pide, solo en borrador y si WordPress deja
+    const ma = await metaAvanzada(seo.advanced, d, wp, wpJson), seoAvanzado = ma.seoAvanzado; avisos.push(...ma.avisos);
     // 7) Anotar en la app dónde quedó
     const yo = await sb("/auth/v1/user").then((x) => x.ok ? x.json() : {}).catch(() => ({}));
-    const estado = { id: d.id, estado: d.status || "draft", enlace: d.link || "", editar: `${WP}/wp-admin/post.php?post=${d.id}&action=edit`, media, at: new Date().toISOString(), por: yo.email || "", yoast };
+    const estado = { id: d.id, estado: d.status || "draft", enlace: d.link || "", editar: `${WP}/wp-admin/post.php?post=${d.id}&action=edit`, media, at: new Date().toISOString(), por: yo.email || "", yoast, seoAvanzado };
     const rg = await sb(`/rest/v1/posts?id=eq.${id}`, { method: "PATCH", headers: { Prefer: "return=minimal" }, body: JSON.stringify({ wp: estado }) });
     if (!rg.ok) avisos.push("El artículo sí llegó a WordPress, pero no se pudo anotar en la parrilla.");
     return json({ ok: true, nuevo, subidas, wp: estado, avisos });
