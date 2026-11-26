@@ -19,7 +19,7 @@ function analyze(input){
  const flesch=w.length?Math.round(lang==="es"?206.84-60*syl-1.02*avg:206.835-1.015*avg-84.6*syl):null;
  const transition=lang==="en"?/\b(however|therefore|also|because|for example|in addition|finally|although|instead|meanwhile|moreover|first|then|so)\b/i:/\b(sin embargo|adem[aá]s|por ejemplo|porque|por tanto|finalmente|aunque|primero|despu[eé]s|as[ií]|por eso)\b/i;
  const stop=new Set((lang==="en"?"the a an and or to of in on for is are was were with as by from at that this it you your be can will have has we our they their not but":"el la los las un una y o de del en con por para es son se que su sus al como a no una unos unas esta este entre").split(" "));
- const freq={};w.filter(x=>x.length>3&&!stop.has(x)).forEach(x=>freq[x]=(freq[x]||0)+1);
+ const freq=Object.create(null);w.filter(x=>x.length>3&&!stop.has(x)).forEach(x=>freq[x]=(freq[x]||0)+1);
  const prominent=Object.entries(freq).sort((a,b)=>b[1]-a[1]).slice(0,8);
  const p=phrases.filter(x=>x.term).slice(0,5).map(x=>{
  const variants=[x.term,...(x.synonyms||[])].filter(Boolean);
@@ -66,12 +66,16 @@ function render(){
  links.append(el("p","Sugerencias de la biblioteca local; no comprueban publicación ni existencia de la URL.","adv-note"));
  if(!candidates.length)links.append(el("p","No hay coincidencias suficientes."));
  for(const c of candidates){const row=el("div",null,"adv-row");row.append(el("span",c.t));const b=el("button","Copiar URL","btn ghost small");b.type="button";b.onclick=async()=>{const ok=await copiarTexto("https://www.yucatanlove.com/"+encodeURIComponent(c.slug)+"/");b.textContent=ok?"Copiado":"No se pudo";};row.append(b);links.append(row);}
+ const local=(typeof posts!=="undefined"?posts:[]).filter(p=>p.tipo==="Blog"&&p.id!==current?.id);
+ const primary=d.phrases[0].term;const conflicts=primary?local.filter(p=>norm(p.seo?.kw).trim()===norm(primary).trim()):[];
+ if(conflicts.length){links.append(el("strong","Posible canibalización de palabra clave"));list(links,conflicts.map(p=>p.copy||p.seo?.titulo||"Sin título"));}
+ const slug=d.slug; if(slug){const incoming=local.filter(p=>JSON.stringify(p.cuerpo||[]).includes("/"+slug+"/")).length;links.append(el("p","Enlaces entrantes detectados en borradores locales: "+incoming+" (no equivale a auditoría del sitio publicado).","adv-note"));}
  preview.replaceChildren();const url=safeUrl(value("socialImage"));if(url){const im=el("img");im.src=url;im.alt="Vista previa social";im.referrerPolicy="no-referrer";preview.append(im);}
- preview.append(el("small","YUCATANLOVE.COM · vista aproximada"),el("strong",value("socialTitle")||d.title),el("p",value("socialDescription")||d.description));
+ preview.append(el("small","Facebook · YUCATANLOVE.COM · vista aproximada"),el("strong",value("socialTitle")||d.title),el("p",value("socialDescription")||d.description),el("hr"),el("small","X · tarjeta aproximada"),el("strong",value("socialTitle")||d.title),el("p",value("socialDescription")||d.description));
  technical.textContent=(value("canonical")&&!safeUrl(value("canonical"))?"URL canónica inválida. ":"")+(value("oldSlug")&&value("oldSlug")!==d.slug?"Redirección propuesta: "+value("oldSlug")+" → "+d.slug+". ":"")+"Estos ajustes se guardan en el borrador; requieren integración WordPress para aplicarse.";
 }
 const originalRead=seoLeer,originalLoad=seoCargar,originalRender=seoPintar;
-seoLeer=function(){const s=originalRead();s.advanced=snapshot();return s;};
+seoLeer=function(){const s=originalRead();if($("e-tipo").value==="Blog")s.advanced=snapshot();return s;};
 seoCargar=function(p){restore(p?.seo?.advanced||{});originalLoad(p);render();};
 seoPintar=function(){originalRender();render();};
 panel.addEventListener("input",()=>{editorDirty=true;render();});
@@ -80,7 +84,7 @@ for(const [action,label] of actions){const b=el("button",label,"btn ghost small"
  b.disabled=true;aiOut.textContent="Solicitando sugerencias…";
  try{
  const prompts={meta:"Genera 3 opciones de título SEO y descripción, sin inventar datos.",optimize:"Identifica mejoras concretas y propone reemplazos de fragmentos; conserva hechos y estilo.",summary:"Resume el artículo en 3 puntos.",plan:"Propón 5 ideas y un esquema editorial para bodas destino en Yucatán.",inclusive:"Señala lenguaje potencialmente excluyente y alternativas contextualizadas.",alt:"Propón mejoras para los textos alternativos existentes. No describas imágenes que no puedas ver."};
- const {data,error}=await sb.functions.invoke("ia",{body:{accion:"pulir_caption",post:{tipo:"Blog",copy:d.title,caption:d.body.slice(0,18000)},idioma:d.lang,instruccion:prompts[action]+" Palabras clave: "+d.phrases.map(p=>p.term).join(", ")}});
+ const {data,error}=await sb.functions.invoke("ia",{body:{accion:"pulir_caption",post:{tipo:"Blog",copy:d.title,caption:(d.body||d.title||"Destination weddings in Yucatán").slice(0,18000)},idioma:d.lang,instruccion:prompts[action]+" Palabras clave: "+d.phrases.map(p=>p.term).join(", ")}});
  if(current?.id!==id)return;
  if(error||!data||data.error||!Array.isArray(data.opciones)||!data.opciones.length)throw new Error("El asistente existente no devolvió sugerencias válidas.");
  aiOut.replaceChildren();for(const option of data.opciones){if(typeof option!=="string")continue;const p=el("p",option);p.style.whiteSpace="pre-wrap";aiOut.append(p);const c=el("button","Copiar sugerencia","btn ghost small");c.type="button";c.onclick=()=>copiarTexto(option);aiOut.append(c);}aiOut.append(el("p","Revisa antes de aplicar. La respuesta depende del asistente de Supabase existente.","adv-note"));
