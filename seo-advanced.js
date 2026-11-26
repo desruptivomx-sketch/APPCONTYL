@@ -30,7 +30,20 @@ function analyze(input){
  });
  return {words:w.length,reading:Math.ceil(w.length/220),flesch,long,avg,transition:sentenceWords.length?Math.round(100*sentences.filter(s=>transition.test(s)).length/sentenceWords.length):0,longParagraphs:paragraphs.filter(x=>tokens(x).length>150).length,passive:sentences.filter(s=>lang==="en"?/\b(?:is|are|was|were|been|being)\s+(?:\w+\s+)?\w+(?:ed|en)\b/i.test(s):/\b(?:es|son|fue|fueron|sido|ser[aá])\s+\w+(?:ado|ido|ada|ida|ados|idos|adas|idas)\b/i.test(s)).length,prominent,phrases:p,cornerstone, sentences:sentenceWords.length};
 }
-if(typeof module!=="undefined"&&module.exports){module.exports={analyze,occurrences};return;}
+function articleSchema(d){
+ const kind=["Article","BlogPosting","NewsArticle"].includes(d.type)?d.type:"BlogPosting";
+ const text=v=>String(v||"").trim();
+ const obj={"@context":"https://schema.org","@type":kind,headline:text(d.headline),inLanguage:d.lang==="es"?"es":"en"};
+ if(text(d.description))obj.description=text(d.description);
+ if(d.url)obj.mainEntityOfPage={"@type":"WebPage","@id":d.url};
+ if(d.image)obj.image=[d.image];
+ if(text(d.author))obj.author={"@type":"Person",name:text(d.author)};
+ if(d.datePublished)obj.datePublished=d.datePublished;
+ if(d.dateModified)obj.dateModified=d.dateModified;
+ return obj;
+}
+function metricDelta(a,b){return typeof a==="number"&&typeof b==="number"&&b!==0?100*(a-b)/b:null;}
+if(typeof module!=="undefined"&&module.exports){module.exports={analyze,occurrences,articleSchema,metricDelta};return;}
 const root=document.getElementById("seo-box"); if(!root)return;
 const el=(tag,txt,cls)=>{const n=document.createElement(tag);if(txt!=null)n.textContent=txt;if(cls)n.className=cls;return n;};
 const panel=el("details",null,"seo-advanced");panel.open=true;
@@ -73,6 +86,55 @@ auditButton.onclick=async()=>{
 };
 const social=group("Vista previa social · Facebook / X");field(social,"socialTitle","Título social");field(social,"socialDescription","Descripción social","textarea");field(social,"socialImage","URL de imagen social");const preview=el("div",null,"adv-social");social.append(preview);
 const tech=group("Configuración editorial y técnica");field(tech,"canonical","URL canónica");field(tech,"applyMeta","Enviar ajustes SEO avanzados a WordPress (solo borradores)","checkbox");field(tech,"noindex","Solicitar noindex (desmarcar no elimina una orden previa)","checkbox");field(tech,"oldSlug","Slug anterior (propuesta de redirección)");field(tech,"schema","Tipo de Schema (Article / BlogPosting / NewsArticle)");const technical=el("div",null,"adv-note");tech.append(technical);
+const schemaGroup=group("Generador Schema · JSON-LD");
+field(schemaGroup,"schemaImage","URL pública de imagen representativa (opcional)");
+field(schemaGroup,"publishedDate","Fecha real de publicación (opcional)","date");
+field(schemaGroup,"modifiedDate","Fecha real de modificación (opcional)","date");
+const schemaOut=el("pre");schemaOut.style.cssText="white-space:pre-wrap;overflow-wrap:anywhere;max-height:240px;overflow:auto;font-size:12px";
+const schemaNote=el("p",null,"adv-note");
+const schemaCopy=el("button","Copiar JSON-LD","btn ghost small");schemaCopy.type="button";
+const schemaDownload=el("button","Exportar .json","btn ghost small");schemaDownload.type="button";
+schemaGroup.append(schemaNote,schemaOut,schemaCopy,schemaDownload);
+function makeSchema(){
+ const s=originalRead(),a=snapshot(),slug=s.slug||"",u=safeUrl(a.canonical)||safeUrl(current?.wp?.estado==="publish"?current.wp.enlace:"")||(slug?"https://www.yucatanlove.com/"+encodeURIComponent(slug)+"/":null);
+ const date=v=>/^\d{4}-\d{2}-\d{2}$/.test(v||"")?v:null;
+ return articleSchema({type:a.schema,headline:$("e-copy").value,description:s.desc,author:s.autor,lang:a.lang,url:u,image:safeUrl(a.schemaImage)||safeUrl(a.socialImage),datePublished:date(a.publishedDate),dateModified:date(a.modifiedDate)});
+}
+function renderSchema(){
+ const obj=makeSchema();schemaOut.textContent=JSON.stringify(obj,null,2);
+ const missing=[!obj.headline&&"título",!obj.author&&"autor",!obj.image&&"imagen pública",!obj.datePublished&&"fecha real de publicación",!obj.mainEntityOfPage&&"URL"].filter(Boolean);
+ schemaNote.textContent=(missing.length?"Revisar: "+missing.join(", ")+". ":"Campos recomendados presentes. ")+"La URL del slug puede ser provisional. Exportación únicamente: no se inserta otro Schema en WordPress ni se garantiza un resultado enriquecido.";
+ schemaCopy.disabled=schemaDownload.disabled=!obj.headline;
+}
+schemaCopy.onclick=async()=>{schemaCopy.textContent=await copiarTexto(JSON.stringify(makeSchema(),null,2))?"Copiado":"No se pudo";};
+schemaDownload.onclick=()=>{const u=URL.createObjectURL(new Blob([JSON.stringify(makeSchema(),null,2)],{type:"application/ld+json"}));const a=el("a");a.href=u;a.download="article-schema.json";a.click();setTimeout(()=>URL.revokeObjectURL(u),1000);};
+const perf=group("Google Search Console · rendimiento orgánico");
+const perfUrl=el("input");perfUrl.type="url";perfUrl.placeholder="URL publicada exacta";const perfPeriod=el("select");
+for(const n of [7,28,90]){const o=el("option",n+" días");o.value=String(n);perfPeriod.append(o);}perfPeriod.value="28";
+const perfBtn=el("button","Consultar rendimiento","btn ghost small");perfBtn.type="button";
+const perfOut=el("div",null,"adv-status");perf.append(perfUrl,perfPeriod,perfBtn,perfOut);
+let performanceRequest=0;
+function resetPerf(){performanceRequest++;perfBtn.disabled=false;perfOut.replaceChildren();perfUrl.value=current?.wp?.estado==="publish"?(current.wp.enlace||""):"";}
+perfBtn.onclick=async()=>{
+ const page=safeUrl(perfUrl.value.trim());if(!page){perfOut.textContent="Introduce la URL publicada exacta.";return;}
+ const seq=++performanceRequest,id=current?.id;perfBtn.disabled=true;perfOut.textContent="Consultando Google…";
+ try{
+ const {data,error}=await sb.functions.invoke("gsc",{body:{page,days:Number(perfPeriod.value)}});
+ if(seq!==performanceRequest||current?.id!==id)return;
+ let r=data;if(error){try{r=await error.context.json();}catch{}throw Error(r?.error||"No se pudo conectar con la función gsc.");}
+ if(!r?.ok)throw Error(r?.error||"Respuesta inválida.");
+ perfOut.replaceChildren();perfOut.append(el("p",r.range.current.startDate+" a "+r.range.current.endDate+" · búsqueda web · comparación con periodo anterior","adv-note"));
+ if(!r.current){perfOut.append(el("p","No hay filas disponibles para esa URL y periodo. No equivale necesariamente a cero."));return;}
+ const labels=[["clicks","Clics"],["impressions","Impresiones"],["ctr","CTR"],["position","Posición media"]];
+ const fmt=(k,v)=>typeof v!=="number"?"—":k==="ctr"?(v*100).toFixed(2)+"%":k==="position"?v.toFixed(1):v.toLocaleString("es-MX");
+ for(const [k,label] of labels){const a=r.current[k],b=r.previous?.[k];const delta=k==="position"?null:metricDelta(a,b);perfOut.append(el("p",label+": "+fmt(k,a)+" · anterior: "+fmt(k,b)+(delta===null?"":" · "+(delta>=0?"+":"")+delta.toFixed(1)+"% relativo")));}
+ perfOut.append(el("strong","Consultas principales"));
+ const table=el("table");table.style.width="100%";const head=el("tr");["Consulta","Clics","Impr.","CTR","Pos."].forEach(x=>head.append(el("th",x)));table.append(head);
+ for(const q of (r.queries||[]).slice(0,20)){const row=el("tr");[q.keys?.[0]||"",fmt("clicks",q.clicks),fmt("impressions",q.impressions),fmt("ctr",q.ctr),fmt("position",q.position)].forEach(x=>row.append(el("td",x)));table.append(row);}perfOut.append(table);
+ perfOut.append(el("p","Google puede omitir consultas anonimizadas o filas. Comparación observacional, no prueba de causalidad.","adv-note"));
+ }catch(e){if(seq===performanceRequest&&current?.id===id)perfOut.textContent=e.message||"No disponible";}
+ finally{if(seq===performanceRequest)perfBtn.disabled=false;}
+};
 const history=group("Historial de experimentos SEO");
 const histOut=el("div",null,"adv-status");const histBtn=el("button","Registrar versión de análisis","btn ghost small");histBtn.type="button";
 const histNote=el("input");histNote.placeholder="Hipótesis o cambio realizado (opcional)";histNote.maxLength=240;history.append(histNote,histBtn,histOut);
@@ -98,7 +160,7 @@ function list(parent,items){const ul=el("ul");items.forEach(x=>ul.append(el("li"
 function safeUrl(s){try{const u=new URL(s);return /^https?:$/.test(u.protocol)?u.href:null;}catch{return null;}}
 function render(){
  if(root.classList.contains("hidden"))return;
- const d=input(),a=analyze(d);result.replaceChildren();
+ const d=input(),a=analyze(d);renderSchema();result.replaceChildren();
  if(!a.phrases.length)result.append(el("p","Define una frase principal para comenzar."));
  for(const p of a.phrases){result.append(el("strong",p.term+" · "+p.count+" apariciones (máximo por variante) · "+p.density.toFixed(1)+"% estimado"));list(result,p.checks.map(([k,v])=>(v?"✓ ":"○ ")+k));}
  readout.replaceChildren();list(readout,[a.words+" palabras · "+a.reading+" min aprox.","Flesch "+(a.flesch??"—")+" (estimación lingüística)","Frases largas: "+a.long+" de "+a.sentences,"Promedio de palabras por frase: "+a.avg.toFixed(1),"Transiciones detectadas: "+a.transition+"%","Párrafos de más de 150 palabras: "+a.longParagraphs,"Posible voz pasiva: "+a.passive+" frases","Palabras destacadas: "+a.prominent.map(([w,n])=>w+" ("+n+")").join(", "),...(a.cornerstone?["Contenido pilar: revisa profundidad, enlaces y actualización periódica."]:[])]);
@@ -116,7 +178,7 @@ function render(){
 }
 const originalRead=seoLeer,originalLoad=seoCargar,originalRender=seoPintar;
 seoLeer=function(){const s=originalRead();if($("e-tipo").value==="Blog")s.advanced=snapshot();return s;};
-seoCargar=function(p){restore(p?.seo?.advanced||{});originalLoad(p);render();if(auditData)renderAudit();};
+seoCargar=function(p){restore(p?.seo?.advanced||{});originalLoad(p);resetPerf();render();if(auditData)renderAudit();};
 seoPintar=function(){originalRender();render();};
 panel.addEventListener("input",()=>{editorDirty=true;render();});
 for(const [action,label] of actions){const b=el("button",label,"btn ghost small");b.type="button";btns.append(b);b.onclick=async()=>{
