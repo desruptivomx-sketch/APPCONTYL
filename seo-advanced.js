@@ -10,49 +10,76 @@
 "use strict";
 
 /* ===================== Motor (sin DOM) ===================== */
-const norm=s=>String(s||"").normalize("NFD").replace(/[\u0300-\u036f]/g,"").toLowerCase();
-const tokens=s=>norm(s).match(/[\p{L}\p{N}]+/gu)||[];
-const stem=(w,lang)=>lang==="en"?w.replace(/ies$/,"y").replace(/(?:ches|shes|xes|zes|sses)$/,(m)=>m.slice(0,-2)).replace(/(?<!s)s$/,""):w.replace(/(?:es|s)$/,"");
-const words=(s,lang)=>tokens(s).map(w=>stem(w,lang));
-function occurrences(text,phrase,lang){
- const a=words(text,lang),b=words(phrase,lang); if(!b.length)return 0;
- let n=0; for(let i=0;i<=a.length-b.length;i++)if(b.every((w,j)=>w===a[i+j])){n++;i+=b.length-1;}return n;
+const norm = s => String(s || "").normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase();
+const tokens = s => norm(s).match(/[\p{L}\p{N}]+/gu) || [];
+// Raíz aproximada para reconocer singular y plural como la misma palabra (no es un lematizador).
+// Solo se recortan palabras de 4 letras o más: nunca queda una raíz vacía.
+function stem(w, lang){
+  if (lang === "en") return w.length < 4 ? w : w.replace(/ies$/, "y").replace(/(?:ches|shes|xes|zes|sses)$/, m => m.slice(0, -2)).replace(/([^s])s$/, "$1");
+  let x = w;
+  if (x.length >= 4) {
+    if (/[^i]s$/.test(x)) x = x.slice(0, -1);                              // bodas → boda · flores → flore · (país, crisis se quedan)
+    if (x.length >= 4 && /[^aeiou]e$/.test(x)) x = x.slice(0, -1);         // flore → flor · viaje → viaj (igual que viajes)
+  }
+  return x.replace(/z$/, "c");                                             // luz y luces → luc
 }
+// En inglés, el posesivo no cuenta como otra palabra: bride's → bride
+const words = (s, lang) => tokens(lang === "en" ? String(s || "").replace(/['’]s\b/gi, "") : s).map(w => stem(w, lang));
+const contar = (a, b) => { if (!b.length || b.length > a.length) return 0; let n = 0; for (let i = 0; i <= a.length - b.length; i++) if (b.every((w, j) => w === a[i + j])) { n++; i += b.length - 1; } return n; };
+function occurrences(text, phrase, lang){ return contar(words(text, lang), words(phrase, lang)); }
+
+const TRANSICION = {
+  en: /\b(however|therefore|also|because|for example|for instance|in addition|finally|although|instead|meanwhile|moreover|furthermore|first|second|then|so|as a result|in fact)\b/,
+  es: /\b(sin embargo|ademas|por ejemplo|porque|por tanto|por lo tanto|finalmente|aunque|primero|despues|luego|asi|por eso|tambien|en cambio|es decir|por ultimo|de hecho)\b/,
+};
+const VACIAS = {
+  en: "the a an and or to of in on for is are was were with as by from at that this it you your be can will have has we our they their not but",
+  es: "el la los las un una y o de del en con por para es son se que su sus al como a no una unos unas esta este entre",
+};
 function analyze(input){
- const {body="",title="",description="",slug="",headings=[],paragraphs=[],images=[],phrases=[],lang="en",cornerstone=false}=input;
- const w=tokens(body), sentences=body.match(/[^.!?]+(?:[.!?]+|$)/g)||[];
- const sentenceWords=sentences.map(tokens).map(x=>x.length).filter(Boolean);
- const long=sentenceWords.filter(n=>n> (lang==="en"?20:25)).length;
- const syllables=w.reduce((sum,x)=>sum+Math.max(1,(x.match(/[aeiouy]+/g)||[]).length-(lang==="en"&&/[^l]e$/.test(x)?1:0)),0);
- const avg=w.length/Math.max(1,sentenceWords.length), syl=syllables/Math.max(1,w.length);
- const flesch=w.length?Math.round(lang==="es"?206.84-60*syl-1.02*avg:206.835-1.015*avg-84.6*syl):null;
- const transition=lang==="en"?/\b(however|therefore|also|because|for example|in addition|finally|although|instead|meanwhile|moreover|first|then|so)\b/i:/\b(sin embargo|adem[aá]s|por ejemplo|porque|por tanto|finalmente|aunque|primero|despu[eé]s|as[ií]|por eso)\b/i;
- const stop=new Set((lang==="en"?"the a an and or to of in on for is are was were with as by from at that this it you your be can will have has we our they their not but":"el la los las un una y o de del en con por para es son se que su sus al como a no una unos unas esta este entre").split(" "));
- const freq=Object.create(null);w.filter(x=>x.length>3&&!stop.has(x)).forEach(x=>freq[x]=(freq[x]||0)+1);
- const prominent=Object.entries(freq).sort((a,b)=>b[1]-a[1]).slice(0,8);
- const p=phrases.filter(x=>x.term).slice(0,5).map(x=>{
- const variants=[x.term,...(x.synonyms||[])].filter(Boolean);
- const match=t=>variants.some(v=>occurrences(t,v,lang)>0);
- const count=Math.max(...variants.map(v=>occurrences(body,v,lang)));
- const checks=[["Título",match(title)],["Descripción",match(description)],["URL",match(slug.replace(/-/g," "))],["Introducción",match(paragraphs[0]||body.slice(0,350))],["Subtítulos",headings.some(h=>match(h))],["Texto",count>0],["Texto alternativo",images.some(match)]];
- return {term:x.term,count,density:w.length?100*count*tokens(x.term).length/w.length:0,checks};
- });
- return {words:w.length,reading:Math.ceil(w.length/220),flesch,long,avg,transition:sentenceWords.length?Math.round(100*sentences.filter(s=>transition.test(s)).length/sentenceWords.length):0,longParagraphs:paragraphs.filter(x=>tokens(x).length>150).length,passive:sentences.filter(s=>lang==="en"?/\b(?:is|are|was|were|been|being)\s+(?:\w+\s+)?\w+(?:ed|en)\b/i.test(s):/\b(?:es|son|fue|fueron|sido|ser[aá])\s+\w+(?:ado|ido|ada|ida|ados|idos|adas|idas)\b/i.test(s)).length,prominent,phrases:p,cornerstone, sentences:sentenceWords.length};
+  const { body = "", title = "", description = "", slug = "", headings = [], paragraphs = [], images = [], phrases = [], lang = "en", cornerstone = false } = input || {};
+  const L = lang === "es" ? "es" : "en", w = tokens(body);
+  // La legibilidad se mide sobre la prosa (los párrafos). Cada bloque cierra su frase aunque no termine en punto.
+  const prosa = paragraphs.length ? paragraphs.join("\n") : String(body);
+  const sentences = prosa.split(/\n+/).flatMap(l => l.replace(/^\s*•\s*/, "").match(/[^.!?]+(?:[.!?]+|$)/g) || []).filter(s => tokens(s).length);
+  const sentenceWords = sentences.map(s => tokens(s).length), pw = tokens(prosa);
+  const long = sentenceWords.filter(n => n > (L === "en" ? 20 : 25)).length;
+  const syllables = pw.reduce((sum, x) => sum + Math.max(1, (x.match(/[aeiouy]+/g) || []).length - (L === "en" && /[^l]e$/.test(x) ? 1 : 0)), 0);
+  const avg = pw.length / Math.max(1, sentenceWords.length), syl = syllables / Math.max(1, pw.length);
+  // Inglés: Flesch Reading Ease. Español: adaptación de Fernández Huerta. Se acota a 0–100.
+  const flesch = pw.length ? Math.max(0, Math.min(100, Math.round(L === "es" ? 206.84 - 60 * syl - 1.02 * avg : 206.835 - 1.015 * avg - 84.6 * syl))) : null;
+  const stop = new Set(VACIAS[L].split(" ")), freq = Object.create(null);
+  w.filter(x => x.length > 3 && !stop.has(x)).forEach(x => { freq[x] = (freq[x] || 0) + 1; });
+  const prominent = Object.entries(freq).sort((a, b) => b[1] - a[1]).slice(0, 8);
+  // Cada texto se separa en palabras una sola vez; las frases y sus sinónimos se buscan ahí
+  const T = { title: words(title, L), description: words(description, L), slug: words(String(slug).replace(/-/g, " "), L), intro: words(paragraphs[0] || String(body).slice(0, 350), L), body: words(body, L), headings: headings.map(h => words(h, L)), images: images.map(i => words(i, L)) };
+  const p = phrases.filter(x => x && x.term).slice(0, 5).map(x => {
+    const variants = [x.term, ...(x.synonyms || [])].filter(Boolean).map(v => words(v, L)).filter(v => v.length);
+    const has = a => variants.some(v => contar(a, v) > 0);
+    const count = Math.max(0, ...variants.map(v => contar(T.body, v)));      // el máximo entre la frase y sus sinónimos, no la suma
+    const checks = [["Título", has(T.title)], ["Descripción", has(T.description)], ["URL", has(T.slug)], ["Introducción", has(T.intro)], ["Subtítulos", T.headings.some(has)], ["Texto", count > 0], ["Texto alternativo", T.images.some(has)]];
+    return { term: x.term, count, density: w.length ? 100 * count * tokens(x.term).length / w.length : 0, checks };
+  });
+  return { words: w.length, reading: Math.ceil(w.length / 220), flesch, long, avg,
+    transition: sentenceWords.length ? Math.round(100 * sentences.filter(s => TRANSICION[L].test(norm(s))).length / sentenceWords.length) : 0,
+    longParagraphs: paragraphs.filter(x => tokens(x).length > 150).length,
+    passive: sentences.filter(s => L === "en" ? /\b(?:is|are|was|were|been|being)\s+(?:\w+\s+)?\w+(?:ed|en)\b/i.test(s) : /\b(?:es|son|fue|fueron|sido|ser[aá])\s+\w+(?:ado|ido|ada|ida|ados|idos|adas|idas)\b/i.test(s)).length,
+    prominent, phrases: p, cornerstone, sentences: sentenceWords.length };
 }
 function articleSchema(d){
- const kind=["Article","BlogPosting","NewsArticle"].includes(d.type)?d.type:"BlogPosting";
- const text=v=>String(v||"").trim();
- const obj={"@context":"https://schema.org","@type":kind,headline:text(d.headline),inLanguage:d.lang==="es"?"es":"en"};
- if(text(d.description))obj.description=text(d.description);
- if(d.url)obj.mainEntityOfPage={"@type":"WebPage","@id":d.url};
- if(d.image)obj.image=[d.image];
- if(text(d.author))obj.author={"@type":"Person",name:text(d.author)};
- if(d.datePublished)obj.datePublished=d.datePublished;
- if(d.dateModified)obj.dateModified=d.dateModified;
- return obj;
+  const kind = ["Article", "BlogPosting", "NewsArticle"].includes(d.type) ? d.type : "BlogPosting";
+  const text = v => String(v || "").trim();
+  const obj = { "@context": "https://schema.org", "@type": kind, headline: text(d.headline), inLanguage: d.lang === "es" ? "es" : "en" };
+  if (text(d.description)) obj.description = text(d.description);
+  if (d.url) obj.mainEntityOfPage = { "@type": "WebPage", "@id": d.url };
+  if (d.image) obj.image = [d.image];
+  if (text(d.author)) obj.author = { "@type": "Person", name: text(d.author) };
+  if (d.datePublished) obj.datePublished = d.datePublished;
+  if (d.dateModified) obj.dateModified = d.dateModified;
+  return obj;
 }
-function metricDelta(a,b){return typeof a==="number"&&typeof b==="number"&&b!==0?100*(a-b)/b:null;}
-if(typeof module!=="undefined"&&module.exports){module.exports={analyze,occurrences,articleSchema,metricDelta};return;}
+function metricDelta(a, b){ return typeof a === "number" && typeof b === "number" && b !== 0 ? 100 * (a - b) / b : null; }
+if (typeof module !== "undefined" && module.exports) { module.exports = { analyze, occurrences, articleSchema, metricDelta, stem }; return; }
 
 /* ===================== Panel dentro del editor ===================== */
 const app = window.APPCONTYL_SEO, root = document.getElementById("seo-box");

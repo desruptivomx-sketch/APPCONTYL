@@ -48,3 +48,59 @@ test("Search Console property scope",()=>{
  assert.equal(pageAllowed("https://www.yucatanlove.com/a/","https://www.yucatanlove.com/"),true);
  assert.equal(pageAllowed("https://www.yucatanlove.com/other","https://www.yucatanlove.com/blog/"),false);
 });
+
+// ---- Motor: casos que fallaban o no estaban cubiertos (nov 2026) ----
+const {stem}=require("../seo-advanced.js");
+test("plurales en español: singular y plural dan la misma raíz",()=>{
+ for(const [plural,singular] of [["bodas","boda"],["flores","flor"],["luces","luz"],["viajes","viaje"],["países","país"],["noches","noche"],["ciudades","ciudad"],["jardines","jardín"],["imágenes","imagen"],["felices","feliz"],["enlaces","enlace"],["meses","mes"]])
+  assert.equal(occurrences(plural,singular,"es"),1,plural+" / "+singular);
+ assert.equal(occurrences("una novia feliz","novio","es"),0);
+});
+test("plurales y posesivos en inglés",()=>{
+ for(const [a,b] of [["weddings","wedding"],["venues","venue"],["beaches","beach"],["parties","party"],["dresses","dress"],["boxes","box"]])assert.equal(occurrences(a,b,"en"),1,a+" / "+b);
+ assert.equal(occurrences("The bride's speech at the brides’ table","bride speech","en"),1);
+ assert.equal(occurrences("a dress code","dresses","en"),1);
+});
+test("nunca queda una raíz vacía (palabras cortas se dejan igual)",()=>{
+ for(const [w,l] of [["es","es"],["s","en"],["is","en"],["as","es"],["mes","es"],["bus","en"]])assert.equal(stem(w,l),w);
+ for(const w of ["tres","antes","this","guess","país","crisis","yes"])for(const l of ["es","en"])assert.ok(stem(w,l).length>0);
+ assert.equal(occurrences("Es una boda.","","es"),0);
+ assert.equal(occurrences("","boda","es"),0);
+});
+test("cada bloque cierra su frase y la legibilidad se mide sobre los párrafos",()=>{
+ const a=analyze({body:"What a Mayan wedding means\n\nThe shaman blesses the couple. Then guests offer flowers.\n\n• Flowers and copal\n• Cacao seeds",paragraphs:["The shaman blesses the couple. Then guests offer flowers."],headings:["What a Mayan wedding means"],lang:"en"});
+ assert.equal(a.sentences,2);assert.equal(a.long,0);assert.equal(a.transition,50);assert.equal(a.words,19);
+ const b=analyze({body:"Título sin punto\nPrimera frase del texto. Segunda frase.",lang:"es"});
+ assert.equal(b.sentences,3);
+});
+test("transiciones en español con acentos",()=>{
+ const a=analyze({body:"Así celebramos la boda. Además, bailamos hasta tarde. Después llegó la cena. Fue un día largo.",lang:"es"});
+ assert.equal(a.transition,75);
+});
+test("la facilidad de lectura queda entre 0 y 100",()=>{
+ const raro=analyze({body:"Institucionalizacionalidades extraordinariamente incomprensibilísimas desproporcionadamente interdisciplinariedades",lang:"es"});
+ assert.ok(raro.flesch>=0&&raro.flesch<=100);
+ const facil=analyze({body:"Yes. No. So. Go.",lang:"en"});
+ assert.ok(facil.flesch>=0&&facil.flesch<=100);
+});
+test("frases: máximo cinco, sinónimos y conteo por variante",()=>{
+ const a=analyze({body:"A cenote ceremony is a ritual. The ritual starts at dawn. Another ritual follows.",title:"Cenote ceremony",slug:"cenote-ceremony-guide",images:["","A cenote ceremony at sunrise"],headings:["The ritual"],phrases:[{term:"cenote ceremony",synonyms:["ritual"]},{term:""},{term:"a"},{term:"b"},{term:"c"},{term:"d"},{term:"e"}],lang:"en"});
+ assert.equal(a.phrases.length,5);assert.equal(a.phrases[0].count,3);
+ assert.deepEqual(a.phrases[0].checks.map(c=>c[1]),[true,false,true,true,true,true,true]);
+ assert.equal(analyze({body:"Texto sin la frase.",phrases:[{term:"boda maya"}],lang:"es"}).phrases[0].count,0);
+});
+test("entradas incompletas no rompen el análisis",()=>{
+ assert.doesNotThrow(()=>analyze());assert.doesNotThrow(()=>analyze({phrases:[null,{term:"x",synonyms:null}],headings:[""],images:[""],paragraphs:[""]}));
+ assert.equal(analyze({lang:"fr",body:"Bonjour."}).words,1);
+});
+test("grafo: variantes de la misma dirección cuentan una vez",()=>{
+ const item=(id,slug,html,link)=>({id,slug,type:"post",link:link||"https://www.yucatanlove.com/"+slug+"/",title:{rendered:slug+" &amp; <em>x</em>"},content:{rendered:html}});
+ const g=graph([
+  item(1,"a",'<a href="https://yucatanlove.com/b">1</a><a href="HTTPS://WWW.YUCATANLOVE.COM/b/?utm=1#top">2</a><a href=\'/b//\'>3</a><a href="mailto:x@y.z">m</a><a href="#ancla">n</a><a>sin href</a>'),
+  item(2,"b",'<a href="/c/">c</a>'),
+  item(3,"c","sin enlaces"),
+  {id:4,slug:"sin-link"},null
+ ],"https://www.yucatanlove.com");
+ assert.equal(g.length,3);assert.equal(g[0].salientes,1);assert.equal(g[1].entrantes,1);assert.equal(g[2].entrantes,1);assert.equal(g[0].entrantes,0);
+ assert.equal(g[0].titulo,"a & x");assert.equal(g[0].html,undefined);
+});
