@@ -84,6 +84,36 @@ const errWP = (d, r) => d && d.code === "incorrect_password" || r.status === 401
   : r.status === 404 ? "WordPress no respondió en la dirección del sitio (puede que un plugin de seguridad esté bloqueando su API)."
   : `WordPress respondió con un error (${(d && d.message) || r.status}).`;
 
+// Auditoría acotada a entradas y páginas publicadas devueltas por la API REST.
+export function grafoSEO(items, sitio) {
+  const origen = new URL(sitio);
+  const canon = (raw, base) => {
+    try {
+      const u = new URL(sinEnt(raw), base);
+      if (!/^https?:$/.test(u.protocol) || u.hostname.replace(/^www\./i,"") !== origen.hostname.replace(/^www\./i,"")) return "";
+      return u.pathname.replace(/\/+$/, "") || "/";
+    } catch { return ""; }
+  };
+  const nodos = items.filter(x => x && x.link && canon(x.link, sitio)).map(x => ({
+    id: x.id, tipo: x.type, url: x.link, key: canon(x.link, sitio), slug: x.slug,
+    titulo: sinEnt(String(x.title?.rendered || "").replace(/<[^>]+>/g,"")).slice(0,250),
+    html: String(x.content?.rendered || ""), fecha: x.modified || "",
+  }));
+  const byKey = new Map(nodos.map(n => [n.key,n]));
+  const incoming = new Map(nodos.map(n=>[n.key,new Set()]));
+  return nodos.map(n=>{
+    const targets = new Set();
+    for (const m of n.html.matchAll(/<a\b[^>]*\bhref\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s>]+))/gi)) {
+      const href=m[1]??m[2]??m[3]??"";
+      if(!href || href.startsWith("#") || href.startsWith("?"))continue;
+      const k=canon(href,n.url);
+      if(k && k!==n.key && byKey.has(k)){targets.add(k);incoming.get(k).add(n.key);}
+    }
+    n.salientes=targets.size;
+    return n;
+  }).map(({html,key,...n})=>({...n,entrantes:incoming.get(key).size}));
+}
+
 export async function manejar(req, env) {
   if (req.method === "OPTIONS") return new Response("ok", { headers: CORS });
   if (req.method !== "POST") return json({ error: "Método no permitido" }, 405);
@@ -106,6 +136,24 @@ export async function manejar(req, env) {
       if (!r.ok) return json({ conectado: false, error: errWP(d, r) });
       const c = d.capabilities || {};
       return json({ conectado: true, usuario: d.name || U, sitio: WP, puede: { borradores: !!c.edit_posts, fotos: !!c.upload_files, publicar: !!c.publish_posts, formato: !!c.unfiltered_html } });
+    }
+    if (b.accion === "auditoria_seo") {
+      const items = [], cobertura = {};
+      for (const tipo of ["posts","pages"]) {
+        let total = null, totalPages = 1, leidos = 0, error = false;
+        for (let page=1;page<=Math.min(totalPages,3);page++) {
+          const r=await wp("/"+tipo+"?status=publish&per_page=100&page="+page+"&_fields=id,type,link,slug,title,content,modified",{signal:AbortSignal.timeout(12000)});
+          if(!r.ok){error=true;break;}
+          const arr=await r.json().catch(()=>null);
+          if(!Array.isArray(arr)){error=true;break;}
+          const rawTotal=r.headers.get("X-WP-Total"), rawPages=r.headers.get("X-WP-TotalPages");
+          total=rawTotal!==null?Number(rawTotal):null;
+          totalPages=rawPages!==null?Math.max(1,Number(rawPages)||1):1;
+          items.push(...arr);leidos+=arr.length;
+        }
+        cobertura[tipo]={leidos,total,completa:!error&&total!==null&&leidos>=total,error};
+      }
+      return json({ok:true,cobertura,articulos:grafoSEO(items,WP),fecha:new Date().toISOString()});
     }
     if (b.accion !== "enviar") return json({ error: "Acción no válida" }, 400);
     // 3) El artículo
