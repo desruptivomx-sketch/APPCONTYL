@@ -104,3 +104,70 @@ test("grafo: variantes de la misma dirección cuentan una vez",()=>{
  assert.equal(g.length,3);assert.equal(g[0].salientes,1);assert.equal(g[1].entrantes,1);assert.equal(g[2].entrantes,1);assert.equal(g[0].entrantes,0);
  assert.equal(g[0].titulo,"a & x");assert.equal(g[0].html,undefined);
 });
+
+// ---- Función wp: auditoría del sitio y metadatos avanzados, con un WordPress simulado (nada sale a la red) ----
+const {auditarSitio,metaAvanzada}=new Function("URL","Deno",source+"\nreturn {auditarSitio,metaAvanzada};")(URL,undefined);
+const respuesta=(cuerpo,{status=200,headers={}}={})=>new Response(JSON.stringify(cuerpo),{status,headers:{"Content-Type":"application/json",...headers}});
+const entradaWP=(id,tipo,html)=>({id,type:tipo,slug:tipo+id,link:"https://www.yucatanlove.com/"+tipo+id+"/",title:{rendered:tipo+" "+id},content:{rendered:html||""}});
+const sitioSimulado=(falla)=>{const llamadas=[];return {llamadas,wp:async(ruta,init={})=>{
+ llamadas.push([init.method||"GET",ruta]);const u=new URL("https://x"+ruta),page=+u.searchParams.get("page"),tipo=u.pathname.slice(1);
+ const f=falla&&falla(tipo,page);if(f==="lanza")throw new Error("The operation timed out");if(f)return f;
+ if(tipo==="posts")return respuesta(page===1?Array.from({length:50},(_,i)=>entradaWP(i+1,"post",i===0?'<a href="/post2/">x</a>':"")):Array.from({length:10},(_,i)=>entradaWP(i+51,"post",'<a href="/post1/">x</a>')),{headers:{"X-WP-Total":"60","X-WP-TotalPages":"2"}});
+ return respuesta([entradaWP(900,"page",'<a href="https://www.yucatanlove.com/post1/">x</a>')],{headers:{"X-WP-Total":"1","X-WP-TotalPages":"1"}});
+}};};
+test("auditoría: lee todas las páginas, solo con GET y solo lo publicado",async()=>{
+ const s=sitioSimulado(),a=await auditarSitio(s.wp,"https://www.yucatanlove.com");
+ assert.deepEqual(a.cobertura,{posts:{leidos:60,total:60,completa:true,error:false},pages:{leidos:1,total:1,completa:true,error:false}});
+ assert.equal(a.articulos.length,61);
+ assert.equal(a.articulos.find(x=>x.slug==="post1").entrantes,11);assert.equal(a.articulos.find(x=>x.slug==="post2").entrantes,1);
+ assert.equal(s.llamadas.length,3);assert.ok(s.llamadas.every(([m,r])=>m==="GET"&&r.includes("status=publish")&&r.includes("per_page=50")));
+});
+test("auditoría: si WordPress falla a media lectura, entrega lo leído como parcial",async()=>{
+ const s=sitioSimulado((tipo,page)=>tipo==="posts"&&page===2?respuesta({code:"x"},{status:500}):null),a=await auditarSitio(s.wp,"https://www.yucatanlove.com");
+ assert.deepEqual(a.cobertura.posts,{leidos:50,total:60,completa:false,error:true});assert.equal(a.cobertura.pages.completa,true);assert.equal(a.articulos.length,51);
+});
+test("auditoría: una petición que se queda sin tiempo no tumba la consulta",async()=>{
+ const s=sitioSimulado((tipo)=>tipo==="posts"?"lanza":null),a=await auditarSitio(s.wp,"https://www.yucatanlove.com");
+ assert.deepEqual(a.cobertura.posts,{leidos:0,total:null,completa:false,error:true});assert.equal(a.articulos.length,1);
+ const b=await auditarSitio(sitioSimulado().wp,"https://www.yucatanlove.com",{limite:-1});
+ assert.equal(b.articulos.length,0);assert.equal(b.cobertura.posts.completa,false);assert.equal(b.cobertura.pages.error,true);
+});
+test("auditoría: sin totales de WordPress no afirma que leyó todo; respeta el tope de páginas",async()=>{
+ const a=await auditarSitio(async()=>respuesta([entradaWP(1,"post")]),"https://www.yucatanlove.com");
+ assert.deepEqual(a.cobertura.posts,{leidos:1,total:null,completa:false,error:false});
+ const s=sitioSimulado((tipo,page)=>tipo==="posts"?respuesta([entradaWP(page,"post")],{headers:{"X-WP-Total":"500","X-WP-TotalPages":"10"}}):null),b=await auditarSitio(s.wp,"https://www.yucatanlove.com",{paginas:3});
+ assert.equal(s.llamadas.filter(([,r])=>r.startsWith("/posts")).length,3);assert.deepEqual(b.cobertura.posts,{leidos:3,total:500,completa:false,error:false});
+ const c=await auditarSitio(async()=>respuesta({code:"rest_forbidden"},{status:401}),"https://www.yucatanlove.com");
+ assert.equal(c.articulos.length,0);assert.equal(c.cobertura.posts.error,true);
+});
+const YOAST={"_yoast_wpseo_opengraph-title":{type:"string"},"_yoast_wpseo_twitter-title":{type:"string"},"_yoast_wpseo_opengraph-description":{type:"string"},"_yoast_wpseo_twitter-description":{type:"string"},"_yoast_wpseo_opengraph-image":{type:"string"},"_yoast_wpseo_twitter-image":{type:"string"},"_yoast_wpseo_canonical":{type:["string","null"]},"_yoast_wpseo_meta-robots-noindex":{type:"string",readonly:true}};
+const wpMeta=(props,eco)=>{const llamadas=[];return {llamadas,
+ wp:async(ruta,init={})=>{llamadas.push([init.method||"GET",ruta]);return respuesta({schema:{properties:{meta:{properties:props}}}});},
+ wpJson:async(ruta,cuerpo)=>{llamadas.push(["POST",ruta,cuerpo]);return respuesta({id:7,meta:eco?eco(cuerpo.meta):cuerpo.meta});}};};
+const ADV={applyMeta:true,socialTitle:" Título social ",socialDescription:"Descripción",socialImage:"https://www.yucatanlove.com/f.jpg",canonical:"https://www.yucatanlove.com/a/",noindex:true};
+test("metadatos avanzados: sin la casilla marcada no hace ninguna petición",async()=>{
+ for(const adv of [undefined,null,{},{applyMeta:false,socialTitle:"x"},{applyMeta:"true",socialTitle:"x"},{applyMeta:true}]){const w=wpMeta(YOAST),r=await metaAvanzada(adv,{id:7,status:"draft"},w.wp,w.wpJson);assert.equal(w.llamadas.length,0);assert.deepEqual(r.seoAvanzado,{guardados:[],pendientes:[]});}
+});
+test("metadatos avanzados: en borrador envía solo lo que WordPress deja escribir y confirma lo guardado",async()=>{
+ const w=wpMeta(YOAST),r=await metaAvanzada(ADV,{id:7,status:"draft"},w.wp,w.wpJson);
+ assert.deepEqual(w.llamadas[0],["OPTIONS","/posts/7"]);assert.equal(w.llamadas.length,2);
+ const enviado=w.llamadas[1][2].meta;assert.equal(enviado["_yoast_wpseo_opengraph-title"],"Título social");assert.equal(enviado["_yoast_wpseo_canonical"],"https://www.yucatanlove.com/a/");
+ assert.equal("_yoast_wpseo_meta-robots-noindex" in enviado,false);           // solo lectura en este WordPress: no se intenta
+ assert.equal(r.seoAvanzado.guardados.length,7);assert.deepEqual(r.seoAvanzado.pendientes,["_yoast_wpseo_meta-robots-noindex"]);
+ assert.ok(r.avisos.some(a=>a.includes("no dejó guardar")&&a.includes("noindex")));assert.ok(r.avisos.some(a=>a.startsWith("Guardado en el borrador")));
+});
+test("metadatos avanzados: en un WordPress que no expone esos campos (como el del sitio hoy) no escribe nada",async()=>{
+ const w=wpMeta({footnotes:{type:"string"}}),r=await metaAvanzada(ADV,{id:7,status:"draft"},w.wp,w.wpJson);
+ assert.equal(w.llamadas.length,1);assert.equal(r.seoAvanzado.guardados.length,0);assert.equal(r.seoAvanzado.pendientes.length,8);
+ assert.equal(r.avisos.length,1);assert.ok(/título para redes, descripción para redes, imagen para redes, URL canónica, noindex/.test(r.avisos[0]));
+});
+test("metadatos avanzados: una entrada que ya no es borrador no se toca",async()=>{
+ for(const status of ["publish","future","private","pending"]){const w=wpMeta(YOAST),r=await metaAvanzada(ADV,{id:7,status},w.wp,w.wpJson);assert.equal(w.llamadas.length,0,status);assert.equal(r.seoAvanzado.pendientes.length,8);assert.ok(r.avisos[0].includes("solo se envían mientras la entrada es borrador"));}
+});
+test("metadatos avanzados: direcciones inválidas no se envían y lo que WordPress no devuelve igual queda pendiente",async()=>{
+ const w=wpMeta(YOAST,(m)=>({...m,"_yoast_wpseo_opengraph-title":"otro valor"}));
+ const r=await metaAvanzada({applyMeta:true,socialTitle:"T",socialImage:"javascript:alert(1)",canonical:"https://usuario:clave@sitio.com/a/"},{id:7,status:"draft"},w.wp,w.wpJson);
+ assert.deepEqual(Object.keys(w.llamadas[1][2].meta).sort(),["_yoast_wpseo_opengraph-title","_yoast_wpseo_twitter-title"]);
+ assert.deepEqual(r.seoAvanzado.guardados,["_yoast_wpseo_twitter-title"]);assert.deepEqual(r.seoAvanzado.pendientes,["_yoast_wpseo_opengraph-title"]);
+ assert.ok(r.avisos.some(a=>a.includes("canónica no es válida")));assert.ok(r.avisos.some(a=>a.includes("imagen para redes no es válida")));
+});
