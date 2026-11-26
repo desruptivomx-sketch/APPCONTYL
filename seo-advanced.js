@@ -3,7 +3,7 @@
 "use strict";
 const norm=s=>String(s||"").normalize("NFD").replace(/[\u0300-\u036f]/g,"").toLowerCase();
 const tokens=s=>norm(s).match(/[\p{L}\p{N}]+/gu)||[];
-const stem=(w,lang)=>lang==="en"?w.replace(/(?:ies)$/,"y").replace(/(?:ing|ed|es|s)$/,""):w.replace(/(?:es|s)$/,"");
+const stem=(w,lang)=>lang==="en"?w.replace(/ies$/,"y").replace(/(?:ches|shes|xes|zes|sses)$/,(m)=>m.slice(0,-2)).replace(/(?<!s)s$/,""):w.replace(/(?:es|s)$/,"");
 const words=(s,lang)=>tokens(s).map(w=>stem(w,lang));
 function occurrences(text,phrase,lang){
  const a=words(text,lang),b=words(phrase,lang); if(!b.length)return 0;
