@@ -219,9 +219,47 @@ export async function manejar(req, env) {
     if (!r.ok || !d.id) return json({ error: errWP(d, r), avisos }, 502);
     const yoast = !!(d.meta && Object.prototype.hasOwnProperty.call(d.meta, "_yoast_wpseo_metadesc"));
     if (!yoast && (seo.titulo || seo.desc || seo.kw)) avisos.push("El título SEO, la meta descripción y la palabra clave no se pudieron escribir en Yoast desde aquí; se copian a mano en el panel de Yoast del artículo.");
+    // 6b) Enviar metadatos opcionales exclusivamente en borradores y si REST los expone.
+    const adv = seo.advanced || {}, seoAvanzado = { guardados: [], pendientes: [] };
+    if (adv.applyMeta === true) {
+      const http = v => { try { const u = new URL(String(v || "")); return /^https?:$/.test(u.protocol) && !u.username && !u.password ? u.href : ""; } catch { return ""; } };
+      const requested = {};
+      for (const [key,val] of Object.entries({
+        "_yoast_wpseo_opengraph-title":adv.socialTitle, "_yoast_wpseo_twitter-title":adv.socialTitle,
+        "_yoast_wpseo_opengraph-description":adv.socialDescription, "_yoast_wpseo_twitter-description":adv.socialDescription,
+        "_yoast_wpseo_opengraph-image":http(adv.socialImage), "_yoast_wpseo_twitter-image":http(adv.socialImage),
+        "_yoast_wpseo_canonical":http(adv.canonical)
+      })) if(typeof val==="string"&&val.trim())requested[key]=val.trim().slice(0,500);
+      if (adv.noindex === true) requested["_yoast_wpseo_meta-robots-noindex"]="1";
+      if (adv.canonical && !http(adv.canonical)) avisos.push("URL canónica inválida: no se envió.");
+      if (adv.socialImage && !http(adv.socialImage)) avisos.push("URL de imagen social inválida: no se envió.");
+      if (d.status !== "draft") {
+        seoAvanzado.pendientes=Object.keys(requested);
+        avisos.push("Los metadatos avanzados solo se envían a entradas en estado borrador.");
+      } else if (Object.keys(requested).length) {
+        const opt = await wp("/posts/"+d.id,{method:"OPTIONS"}).catch(()=>null);
+        const spec = opt?.ok ? await opt.json().catch(()=>({})) : {};
+        const props=spec.schema?.properties?.meta?.properties || {};
+        const compatible={};
+        for (const [k,v] of Object.entries(requested)) {
+          if (props[k] && !props[k].readonly && (props[k].type==="string" || (Array.isArray(props[k].type)&&props[k].type.includes("string")))) compatible[k]=v;
+          else seoAvanzado.pendientes.push(k);
+        }
+        if (Object.keys(compatible).length) {
+          const rr=await wpJson("/posts/"+d.id,{meta:compatible}).catch(()=>null);
+          const dd=rr?.ok?await rr.json().catch(()=>({})):{};
+          for(const [k,v] of Object.entries(compatible)) {
+            if(dd.meta && String(dd.meta[k])===v)seoAvanzado.guardados.push(k);
+            else seoAvanzado.pendientes.push(k);
+          }
+        }
+        if(seoAvanzado.pendientes.length)avisos.push("Ajustes avanzados no confirmados por WordPress: "+seoAvanzado.pendientes.join(", ")+".");
+        if(seoAvanzado.guardados.length)avisos.push("Metadatos avanzados confirmados en REST: "+seoAvanzado.guardados.length+". Falta verificar la salida SEO pública cuando se publique.");
+      }
+    }
     // 7) Anotar en la app dónde quedó
     const yo = await sb("/auth/v1/user").then((x) => x.ok ? x.json() : {}).catch(() => ({}));
-    const estado = { id: d.id, estado: d.status || "draft", enlace: d.link || "", editar: `${WP}/wp-admin/post.php?post=${d.id}&action=edit`, media, at: new Date().toISOString(), por: yo.email || "", yoast };
+    const estado = { id: d.id, estado: d.status || "draft", enlace: d.link || "", editar: `${WP}/wp-admin/post.php?post=${d.id}&action=edit`, media, at: new Date().toISOString(), por: yo.email || "", yoast, seoAvanzado };
     const rg = await sb(`/rest/v1/posts?id=eq.${id}`, { method: "PATCH", headers: { Prefer: "return=minimal" }, body: JSON.stringify({ wp: estado }) });
     if (!rg.ok) avisos.push("El artículo sí llegó a WordPress, pero no se pudo anotar en la parrilla.");
     return json({ ok: true, nuevo, subidas, wp: estado, avisos });
