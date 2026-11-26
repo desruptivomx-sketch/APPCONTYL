@@ -171,3 +171,90 @@ test("metadatos avanzados: direcciones inválidas no se envían y lo que WordPre
  assert.deepEqual(r.seoAvanzado.guardados,["_yoast_wpseo_twitter-title"]);assert.deepEqual(r.seoAvanzado.pendientes,["_yoast_wpseo_opengraph-title"]);
  assert.ok(r.avisos.some(a=>a.includes("canónica no es válida")));assert.ok(r.avisos.some(a=>a.includes("imagen para redes no es válida")));
 });
+
+// ---- Función gsc completa, con Supabase y Google simulados (nada sale a la red) ----
+const crypto=require("node:crypto");
+const {handle:gsc}=new Function("Deno",gscSource+"\nreturn {handle};")(undefined);
+const par=crypto.generateKeyPairSync("rsa",{modulusLength:2048,privateKeyEncoding:{type:"pkcs8",format:"pem"},publicKeyEncoding:{type:"spki",format:"pem"}});
+const CUENTA={type:"service_account",client_email:"lector@proyecto.iam.gserviceaccount.com",private_key:par.privateKey};
+const ADMIN="Bearer cab."+Buffer.from(JSON.stringify({email:"contenidostde@gmail.com"})).toString("base64url")+".firma", OTRO="Bearer cab."+Buffer.from(JSON.stringify({email:"karens.tde@gmail.com"})).toString("base64url")+".firma";
+// Sustituye fetch mientras corre una prueba: Supabase (es_admin), el canje de token de Google y Search Console
+async function conServicios(opc,fn){
+ const real=globalThis.fetch,vistos={supabase:[],token:[],consultas:[]};
+ globalThis.fetch=async(url,init={})=>{
+  url=String(url);const h=new Headers(init.headers||{});
+  if(url.startsWith("https://sb.test/rest/v1/rpc/es_admin")){vistos.supabase.push(h.get("apikey"));if(opc.llaveBuena&&h.get("apikey")!==opc.llaveBuena)return respuesta({message:"Invalid API key"},{status:401});return respuesta(h.get("Authorization")===ADMIN);}
+  if(url==="https://oauth2.googleapis.com/token"){
+   const p=new URLSearchParams(String(init.body)),[c,d,f]=String(p.get("assertion")).split(".");
+   const firmaOk=crypto.verify("RSA-SHA256",Buffer.from(c+"."+d),par.publicKey,Buffer.from(f,"base64url"));
+   vistos.token.push({grant:p.get("grant_type"),cab:JSON.parse(Buffer.from(c,"base64url")),datos:JSON.parse(Buffer.from(d,"base64url")),firmaOk});
+   return opc.googleRechaza||!firmaOk?respuesta({error:"invalid_grant"},{status:400}):respuesta({access_token:"ficha-de-google",expires_in:3600});
+  }
+  if(url.startsWith("https://www.googleapis.com/webmasters/v3/sites/")){
+   const b=JSON.parse(init.body);vistos.consultas.push({url,auth:h.get("Authorization"),b});
+   if(opc.sinAcceso)return respuesta({error:{code:403,message:"User does not have sufficient permission for site"}},{status:403});
+   const dim=(b.dimensions||[])[0];
+   return respuesta(opc.sinFilas?{}:{rows:dim==="query"?[{keys:["mayan wedding"],clicks:60,impressions:900,ctr:0.0667,position:4.2}]:dim==="date"?[{keys:[b.startDate],clicks:5,impressions:150,ctr:0.033,position:8}]:[{clicks:b.startDate>"2026-10-01"?150:100,impressions:4200,ctr:0.0357,position:8.4}]});
+  }
+  throw new Error("petición inesperada a "+url);
+ };
+ try{return await fn(vistos);}finally{globalThis.fetch=real;}
+}
+const ENT={SUPABASE_URL:"https://sb.test",SUPABASE_ANON_KEY:"anon-vieja",GSC_SITE_URL:"sc-domain:yucatanlove.com",GSC_SERVICE_ACCOUNT_JSON:JSON.stringify(CUENTA)};
+const pedir=async(body,auth=ADMIN,ent=ENT,cab={})=>{const r=await gsc(new Request("https://f.test/gsc",{method:"POST",headers:{"Content-Type":"application/json",...(auth?{Authorization:auth}:{}),...cab},body:JSON.stringify(body)}),k=>ent[k]);return {s:r.status,texto:await r.clone().text(),...(await r.json())};};
+const PAG="https://www.yucatanlove.com/mayan-wedding-ceremony/";
+test("gsc: sin sesión, sin ser quien administra o con otra propiedad, nunca llega a Google",async()=>{
+ await conServicios({},async v=>{
+  assert.equal((await pedir({page:PAG,days:28},null)).s,401);
+  assert.equal((await pedir({page:PAG,days:28},OTRO)).s,403);
+  assert.equal((await pedir({page:"https://otro-sitio.com/a/",days:28})).s,400);
+  assert.equal((await pedir({page:"https://www.yucatanlove.com.evil.test/a/",days:28})).s,400);
+  assert.equal(v.token.length,0);assert.equal(v.consultas.length,0);
+ });
+});
+test("gsc: sin configurar avisa cómo está, sin llamar a Google",async()=>{
+ await conServicios({},async v=>{
+  const r=await pedir({page:PAG,days:28},ADMIN,{...ENT,GSC_SERVICE_ACCOUNT_JSON:""});assert.equal(r.s,503);assert.equal(r.setup,true);assert.equal(v.token.length,0);
+ });
+});
+test("gsc: firma bien la cuenta de servicio, pide solo lectura y consulta la página exacta",async()=>{
+ await conServicios({},async v=>{
+  const r=await pedir({page:PAG,days:28});
+  assert.equal(r.s,200);assert.equal(r.ok,true);
+  assert.equal(v.token.length,1);const t=v.token[0];
+  assert.equal(t.firmaOk,true);assert.equal(t.cab.alg,"RS256");assert.equal(t.grant,"urn:ietf:params:oauth:grant-type:jwt-bearer");
+  assert.equal(t.datos.scope,"https://www.googleapis.com/auth/webmasters.readonly");assert.equal(t.datos.iss,CUENTA.client_email);assert.equal(t.datos.aud,"https://oauth2.googleapis.com/token");assert.equal(t.datos.exp-t.datos.iat,3600);
+  assert.equal(v.consultas.length,4);
+  for(const c of v.consultas){
+   assert.equal(c.url,"https://www.googleapis.com/webmasters/v3/sites/sc-domain%3Ayucatanlove.com/searchAnalytics/query");assert.equal(c.auth,"Bearer ficha-de-google");
+   assert.equal(c.b.type,"web");assert.equal(c.b.dataState,"final");assert.deepEqual(c.b.dimensionFilterGroups,[{filters:[{dimension:"page",operator:"equals",expression:PAG}]}]);
+  }
+  const dias=(a)=>(new Date(a.endDate)-new Date(a.startDate))/86400000+1;
+  assert.equal(dias(r.range.current),28);assert.equal(dias(r.range.previous),28);assert.ok(r.range.previous.endDate<r.range.current.startDate);
+  assert.equal(r.current.clicks,150);assert.equal(r.previous.clicks,100);assert.equal(r.queries[0].keys[0],"mayan wedding");assert.equal(r.series.length,1);
+  assert.equal(r.texto.includes("PRIVATE KEY"),false);assert.equal(r.texto.includes("ficha-de-google"),false);assert.equal(r.texto.includes(CUENTA.client_email),false);
+ });
+});
+test("gsc: periodo inválido usa 28 días; sin filas no inventa ceros",async()=>{
+ await conServicios({sinFilas:true},async v=>{
+  const r=await pedir({page:PAG,days:"muchos"});assert.equal(r.s,200);assert.equal(r.current,null);assert.equal(r.previous,null);assert.deepEqual(r.queries,[]);
+  assert.equal((new Date(r.range.current.endDate)-new Date(r.range.current.startDate))/86400000+1,28);
+ });
+});
+test("gsc: si Google rechaza, responde con un mensaje seguro (sin secretos)",async()=>{
+ await conServicios({sinAcceso:true},async()=>{const r=await pedir({page:PAG,days:7});assert.equal(r.s,502);assert.ok(/Search Console respondió 403/.test(r.error));assert.equal(r.texto.includes("PRIVATE KEY"),false);});
+ await conServicios({googleRechaza:true},async v=>{const r=await pedir({page:PAG,days:7});assert.equal(r.s,502);assert.ok(/Google no autorizó la cuenta de servicio/.test(r.error));assert.equal(v.consultas.length,0);});
+ await conServicios({},async v=>{const r=await pedir({page:PAG,days:7},ADMIN,{...ENT,GSC_SERVICE_ACCOUNT_JSON:"{esto no es json"});assert.equal(r.s,502);assert.equal(r.texto.includes("esto no es json"),false);assert.equal(v.token.length,0);});
+});
+test("gsc: usa la llave de Supabase que funcione (la de la app, la nueva o la anterior)",async()=>{
+ await conServicios({llaveBuena:"sb_publishable_app"},async v=>{
+  const r=await pedir({page:PAG,days:7},ADMIN,{...ENT,SUPABASE_PUBLISHABLE_KEYS:JSON.stringify({default:"sb_publishable_app"})},{apikey:"llave-inventada"});
+  assert.equal(r.s,200);assert.deepEqual(v.supabase,["llave-inventada","sb_publishable_app"]);
+ });
+ await conServicios({llaveBuena:"ninguna"},async v=>{const r=await pedir({page:PAG,days:7});assert.equal(r.s,401);assert.equal(v.token.length,0);});
+});
+test("gsc: consulta previa del navegador (CORS) y métodos",async()=>{
+ const o=await gsc(new Request("https://f.test/gsc",{method:"OPTIONS",headers:{"Access-Control-Request-Headers":"authorization, apikey, content-type, x-otra"}}),k=>ENT[k]);
+ assert.equal(o.status,200);assert.ok(o.headers.get("Access-Control-Allow-Headers").includes("x-otra"));
+ assert.equal((await gsc(new Request("https://f.test/gsc",{method:"GET"}),k=>ENT[k])).status,405);
+});

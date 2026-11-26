@@ -1,5 +1,8 @@
-// Supabase Edge Function: gsc. Read-only Search Console, restricted to an administrator and configured property.
-// Secrets: GSC_SERVICE_ACCOUNT_JSON, GSC_SITE_URL. Never expose them to the frontend.
+// @ts-nocheck
+// Función de Supabase «gsc»: Google Search Console en SOLO LECTURA, para quien administra la parrilla y solo sobre la
+// propiedad configurada. Secretos (nunca en el navegador ni en Git): GSC_SERVICE_ACCOUNT_JSON y GSC_SITE_URL.
+// Quién llama se comprueba aquí mismo con su sesión (es_admin en la base, que valida la firma del token); por eso
+// funciona igual con la verificación de JWT de la puerta de Supabase activada o desactivada.
 const cors={"Access-Control-Allow-Origin":"*","Access-Control-Allow-Headers":"authorization, x-client-info, apikey, content-type","Access-Control-Allow-Methods":"POST, OPTIONS"};
 const reply=(body,status=200)=>new Response(JSON.stringify(body),{status,headers:{...cors,"Content-Type":"application/json","Cache-Control":"no-store"}});
 const enc=new TextEncoder();
@@ -33,13 +36,18 @@ export function pageAllowed(page,site){
  }catch{return false;}
 }
 export async function handle(req,env){
- if(req.method==="OPTIONS")return new Response("ok",{headers:cors});
+ if(req.method==="OPTIONS")return new Response("ok",{headers:{...cors,"Access-Control-Allow-Headers":req.headers.get("Access-Control-Request-Headers")||cors["Access-Control-Allow-Headers"]}});
  if(req.method!=="POST")return reply({error:"Método no permitido"},405);
  try{
   const auth=req.headers.get("Authorization")||"",sb=String(env("SUPABASE_URL")||"").replace(/\/+$/,"");
-  if(!/^Bearer .+/i.test(auth))return reply({error:"Sesión requerida"},401);
-  const check=await fetch(sb+"/rest/v1/rpc/es_admin",{method:"POST",headers:{Authorization:auth,apikey:env("SUPABASE_ANON_KEY")||"","Content-Type":"application/json"},body:"{}",signal:AbortSignal.timeout(10000)});
-  if(!check.ok||await check.json().catch(()=>false)!==true)return reply({error:"Solo administradores"},403);
+  if(!/^Bearer .+/i.test(auth))return reply({error:"Tu sesión en la app ya no es válida. Cierra sesión, vuelve a entrar e inténtalo de nuevo."},401);
+  // Llave pública de Supabase: la que manda la app, la nueva (publicable) o la de antes; se usa la primera que la base acepte
+  const dic=(k)=>{try{const o=JSON.parse(env(k)||"null");return o&&typeof o==="object"?String(o.default||Object.values(o)[0]||""):"";}catch{return "";}};
+  const llaves=[...new Set([req.headers.get("apikey"),dic("SUPABASE_PUBLISHABLE_KEYS"),env("SUPABASE_ANON_KEY")].map(x=>String(x||"").trim()).filter(Boolean))];
+  let check=null;
+  for(const k of llaves){check=await fetch(sb+"/rest/v1/rpc/es_admin",{method:"POST",headers:{Authorization:auth,apikey:k,"Content-Type":"application/json"},body:"{}",signal:AbortSignal.timeout(10000)});if(check.status!==401)break;}
+  if(!check||check.status===401)return reply({error:"Tu sesión en la app ya no es válida. Cierra sesión, vuelve a entrar e inténtalo de nuevo."},401);
+  if(!check.ok||await check.json().catch(()=>false)!==true)return reply({error:"Solo quien administra la parrilla puede consultar Search Console."},403);
   const site=String(env("GSC_SITE_URL")||"").trim(),secret=env("GSC_SERVICE_ACCOUNT_JSON");
   if(!site||!secret)return reply({error:"Falta configurar Google Search Console en Supabase.",setup:true},503);
   const b=await req.json().catch(()=>({})),page=String(b.page||"").trim(),days=[7,28,90].includes(b.days)?b.days:28;
