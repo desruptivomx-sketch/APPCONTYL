@@ -27,3 +27,24 @@ test("graph counts unique internal sources and ignores external/self links",()=>
  assert.equal(a[0].salientes,1);assert.equal(a[0].entrantes,0);
  assert.equal(a[1].entrantes,2);assert.equal(a[2].salientes,1);
 });
+
+const {articleSchema,metricDelta}=require("../seo-advanced.js");
+test("Schema uses factual fields and omits unavailable dates",()=>{
+ const a=articleSchema({headline:"Wedding",type:"invalid",author:"Ana",lang:"en"});
+ assert.equal(a["@type"],"BlogPosting");assert.equal(a.author.name,"Ana");assert.equal(a.datePublished,undefined);
+ assert.equal(articleSchema({headline:"Wedding",type:"NewsArticle"})["@type"],"NewsArticle");
+});
+test("relative comparison handles zero baseline",()=>{assert.equal(metricDelta(150,100),50);assert.equal(metricDelta(1,0),null);});
+const gscSource=fs.readFileSync(path.join(__dirname,"../supabase/functions/gsc/index.ts"),"utf8").replace(/export (async )?function /g,(_,a)=>(a||"")+"function ");
+const {windows,pageAllowed}=new Function("Deno",gscSource+"\nreturn {windows,pageAllowed};")(undefined);
+test("Search Console equal comparison periods",()=>{
+ const w=windows(28,new Date("2026-11-26T12:00:00Z"));
+ assert.deepEqual(w.current,{startDate:"2026-10-27",endDate:"2026-11-23"});
+ assert.deepEqual(w.previous,{startDate:"2026-09-29",endDate:"2026-10-26"});
+});
+test("Search Console property scope",()=>{
+ assert.equal(pageAllowed("https://www.yucatanlove.com/a/","sc-domain:yucatanlove.com"),true);
+ assert.equal(pageAllowed("https://yucatanlove.com.evil.test/a/","sc-domain:yucatanlove.com"),false);
+ assert.equal(pageAllowed("https://www.yucatanlove.com/a/","https://www.yucatanlove.com/"),true);
+ assert.equal(pageAllowed("https://www.yucatanlove.com/other","https://www.yucatanlove.com/blog/"),false);
+});
