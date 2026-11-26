@@ -21,7 +21,7 @@
 <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@400;600&family=Nunito+Sans:wght@400;600;700&display=swap" rel="stylesheet">
 <link rel="preload" href="fonts/the-seasons-regular.woff2" as="font" type="font/woff2" crossorigin>
 <link rel="preload" href="fonts/gotham-rounded-light.woff2" as="font" type="font/woff2" crossorigin>
-<link rel="stylesheet" href="styles.css?v=47">
+<link rel="stylesheet" href="styles.css?v=48">
 <link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@1,600&family=Montserrat:wght@500;600&family=Playfair+Display:wght@400&family=Raleway:wght@300;400;700&display=swap">
 </head>
@@ -282,13 +282,15 @@
       <div class="seo-2">
         <label>URL (slug)<div class="seo-slug"><span>yucatanlove.com/</span><input id="seo-slug" maxlength="90" placeholder="mayan-wedding-ceremony"></div><button type="button" class="link" id="seo-slug-auto">Generar desde el título</button></label>
         <label>Palabra clave principal<input id="seo-kw" maxlength="60" placeholder="Mayan wedding"></label>
-        <label>Categoría<input id="seo-cat" list="seo-cats" maxlength="60" placeholder="Wedding Ceremony"></label>
-        <label>Autor<input id="seo-autor" maxlength="60" placeholder="Evi Escobedo"></label>
+        <label>Categoría (como en WordPress)<input id="seo-cat" list="seo-cats" maxlength="60" placeholder="Wedding Ceremony"><span class="seo-ayuda" id="seo-cat-a"></span></label>
+        <label>Autor (usuario de WordPress)<input id="seo-autor" list="seo-autores" maxlength="60" placeholder="Karen Solis"></label>
       </div>
-      <label>Etiquetas (TAGS, separadas por coma)<input id="seo-tags" maxlength="200" placeholder="Mayan wedding, Hacienda wedding"></label>
+      <label>Etiquetas (TAGS, separadas por coma)<input id="seo-tags" maxlength="200" placeholder="Destination Wedding, yucatan weddings"></label>
+      <div class="seo-sug" id="seo-tags-sug" aria-label="Etiquetas que ya existen en el sitio"></div>
       <label>Texto alternativo de la imagen destacada<input id="seo-alt" maxlength="125" placeholder="Couple during a Mayan wedding ceremony in a Yucatán cenote"></label>
       <ul class="seo-chk" id="seo-chk"></ul>
-      <datalist id="seo-cats"><option>Wedding Planner</option><option>Wedding Planning</option><option>Wedding Ceremony</option><option>Wellness</option><option>Make Up</option><option>Hairstyle</option><option>Ideas &amp; Tips</option><option>Destination Wedding</option><option>Hacienda Wedding</option><option>Beach Wedding</option><option>Cenote Wedding</option><option>Religious Wedding</option><option>Legal Wedding</option><option>Symbolic Wedding</option><option>Catering</option><option>Favor</option><option>Bridal and Groom's Wear</option><option>Jewelry and Accessories</option><option>Guest</option><option>Bridesmaids</option><option>Groomsmen</option></datalist>
+      <!-- Se llenan desde app.js con las categorías y autores que existen en el WordPress del sitio -->
+      <datalist id="seo-cats"></datalist><datalist id="seo-autores"></datalist>
           <div class="wp-box" id="wp-box">
         <span class="ia-t">🚀 Pasarlo a WordPress</span>
         <div class="actions">
@@ -342,6 +344,7 @@
       </span>
       <span class="bl-g">
         <button type="button" data-bl="img" title="Insertar una imagen, o varias en fila, donde está el cursor">🖼 Imagen</button>
+        <button type="button" data-bl="tabla" title="Insertar una tabla (la primera fila es el encabezado)">▦ Tabla</button>
         <button type="button" data-bl="btn" title="Insertar un botón con enlace">▭ Botón</button>
         <button type="button" data-bl="hr" title="Insertar una línea separadora">— Línea</button>
       </span>
@@ -447,7 +450,7 @@
 
 <div id="print-area" aria-hidden="true"></div>
 <script src="lib/supabase.js"></script>
-<script src="config.js?v=47"></script>
-<script src="app.js?v=47"></script>
+<script src="config.js?v=48"></script>
+<script src="app.js?v=48"></script>
 </body>
 </html>

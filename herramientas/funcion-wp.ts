@@ -1,8 +1,9 @@
 // @ts-nocheck
 // APPCONTYL → WordPress. Envía un artículo del blog como BORRADOR (o actualiza el que ya se había enviado).
-// Qué hace: sube las fotos del artículo a la biblioteca de WordPress, arma el texto con bloques estándar
-// (títulos, párrafos, listas, citas, imágenes, galerías, botones, líneas), pone portada, URL, extracto,
-// categoría y etiquetas, y deja el artículo como borrador para revisarlo y publicarlo desde WordPress.
+// El artículo llega armado igual que los artículos actuales del sitio (revisados el 24 nov 2026): contenido clásico
+// de WordPress, sin Elementor ni bloques. Párrafos, títulos, listas, citas y tablas simples; cada foto centrada en
+// tamaño "large" (una por párrafo) y, si lleva pie, con [caption]. Así se edita en el sitio como cualquier otro.
+// Además sube las fotos a la biblioteca y pone portada, URL, categoría, etiquetas y autor.
 // Nunca publica por su cuenta: al crear usa "draft"; al actualizar no toca el estado que tenga en WordPress.
 // Secretos (Supabase → Edge Functions → Secrets): WP_USER y WP_APP_PASSWORD (la clave de aplicación de ese usuario).
 // WP_URL es opcional: si no se guarda, se usa el sitio de la marca (SITIO).
@@ -18,7 +19,13 @@ const json = (b, s = 200) => new Response(JSON.stringify(b), { status: s, header
 const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
 const sinEnt = (s) => String(s ?? "").replace(/&amp;/g, "&").replace(/&#0?38;/g, "&").replace(/&quot;/g, '"').replace(/&#0?39;/g, "'").replace(/&lt;/g, "<").replace(/&gt;/g, ">");
 const URL_OK = /^(https?:\/\/|mailto:|tel:)[^\s"<>]*$/i;
-const slug = (s) => String(s || "").normalize("NFD").replace(/\p{M}/gu, "").toLowerCase().replace(/&/g, " and ").replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 90);
+const sinAcentos = (s) => String(s || "").normalize("NFD").replace(/\p{M}/gu, "");
+const slug = (s) => sinAcentos(s).toLowerCase().replace(/&/g, " and ").replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 90);
+// ¿Es el mismo nombre? Se comparan solo letras y números (sin acentos, mayúsculas, apóstrofos ni signos como &)
+const llano = (s) => sinAcentos(sinEnt(s).replace(/&#x?[0-9a-f]+;|&[a-z]+;/gi, " ")).toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
+const igual = (a, b) => llano(a) === llano(b);
+// Texto que va dentro de un [caption]: sin corchetes que lo puedan cortar
+const corch = (s) => esc(s).replace(/\[/g, "&#91;").replace(/\]/g, "&#93;");
 
 // Texto dentro de un bloque: solo pasan <strong> <em> <br> y <a href="…"> con dirección válida.
 // Cualquier otra cosa que parezca etiqueta se convierte en texto: nada guardado llega a WordPress como código.
@@ -31,27 +38,41 @@ export function limpio(x) {
     return t;
   }).join("");
 }
-const plano = (x) => sinEnt(String(x ?? "").replace(/<br>/g, " ").replace(/<[^>]*>/g, ""));
 
-// Bloques de la app → marcado de bloques de WordPress. media: ruta de la foto → { id, url } ya subida.
+// Una foto suelta: "Grande" es el tamaño large de WordPress tal cual (como en el sitio); las otras dos, en proporción
+const ESCALA = { g: 1, m: 62 / 88, ch: 40 / 88 };
+const BOTON = "display: inline-block; padding: 13px 26px; border: 1px solid #222222; color: #222222; font-family: Montserrat, sans-serif; font-size: 12px; font-weight: 500; letter-spacing: 0.14em; text-transform: uppercase; text-decoration: none;";
+const centro = (h) => `<p style="text-align: center;">${h}</p>`;
+
+// Bloques de la app → contenido clásico de WordPress. media: ruta de la foto → { id, url, ls, lu, lw, lh } ya subida
+// (lu/lw/lh = dirección y medidas del tamaño "large"; si la foto es más chica que ese tamaño, las de la foto completa, ls "full").
+// Cada pieza va separada por una línea en blanco y sin saltos por dentro, para que WordPress no le agregue párrafos.
 export function aWordPress(cuerpo, media) {
   const out = [];
-  const imagen = (i, extra, pie) => {
-    const attrs = { id: i.id, ...(extra.width ? { width: extra.width } : {}), sizeSlug: "large", linkDestination: "none", ...(extra.align ? { align: extra.align } : {}) };
-    return `<!-- wp:image ${JSON.stringify(attrs)} -->\n<figure class="wp-block-image${extra.align ? " align" + extra.align : ""} size-large${extra.width ? " is-resized" : ""}"><img src="${esc(i.url)}" alt="${esc(i.alt)}" class="wp-image-${i.id}"${extra.width ? ` style="width:${extra.width}"` : ""}/>${pie ? `<figcaption class="wp-element-caption">${esc(pie)}</figcaption>` : ""}</figure>\n<!-- /wp:image -->`;
-  };
   for (const b of Array.isArray(cuerpo) ? cuerpo : []) {
     if (!b || typeof b !== "object") continue;
-    if (b.t === "p") out.push(`<!-- wp:paragraph -->\n<p>${limpio(b.x)}</p>\n<!-- /wp:paragraph -->`);
-    else if (b.t === "h") { const n = Math.min(4, Math.max(1, parseInt(b.n, 10) || 2)); out.push(`<!-- wp:heading${n === 2 ? "" : ` {"level":${n}}`} -->\n<h${n} class="wp-block-heading">${limpio(b.x)}</h${n}>\n<!-- /wp:heading -->`); }
-    else if (b.t === "ul" || b.t === "ol") out.push(`<!-- wp:list${b.t === "ol" ? ' {"ordered":true}' : ""} -->\n<${b.t} class="wp-block-list">${(b.items || []).map((x) => `<!-- wp:list-item -->\n<li>${limpio(x)}</li>\n<!-- /wp:list-item -->`).join("\n\n")}</${b.t}>\n<!-- /wp:list -->`);
-    else if (b.t === "cita") out.push(`<!-- wp:quote -->\n<blockquote class="wp-block-quote"><!-- wp:paragraph -->\n<p>${limpio(b.x)}</p>\n<!-- /wp:paragraph --></blockquote>\n<!-- /wp:quote -->`);
-    else if (b.t === "hr") out.push(`<!-- wp:separator -->\n<hr class="wp-block-separator has-alpha-channel-opacity"/>\n<!-- /wp:separator -->`);
-    else if (b.t === "btn" && String(b.x || "").trim()) { const h = URL_OK.test(b.href || "") ? b.href : ""; out.push(`<!-- wp:buttons {"layout":{"type":"flex","justifyContent":"center"}} -->\n<div class="wp-block-buttons"><!-- wp:button -->\n<div class="wp-block-button"><a class="wp-block-button__link wp-element-button"${h ? ` href="${esc(h)}"` : ""}>${esc(b.x)}</a></div>\n<!-- /wp:button --></div>\n<!-- /wp:buttons -->`); }
-    else if (b.t === "img") {
-      const imgs = (b.imgs || []).filter((i) => i && media[i.src]).map((i) => ({ ...media[i.src], alt: String(i.alt || "") })).slice(0, 3);
-      if (imgs.length === 1) out.push(imagen(imgs[0], b.w === "m" ? { width: "560px", align: "center" } : b.w === "ch" ? { width: "340px", align: "center" } : {}, b.pie));
-      else if (imgs.length > 1) out.push(`<!-- wp:gallery {"columns":${imgs.length},"linkTo":"none"} -->\n<figure class="wp-block-gallery has-nested-images columns-${imgs.length} is-cropped">${imgs.map((i) => imagen(i, {}, "")).join("\n\n")}${b.pie ? `<figcaption class="blocks-gallery-caption wp-element-caption">${esc(b.pie)}</figcaption>` : ""}</figure>\n<!-- /wp:gallery -->`);
+    if (b.t === "p") out.push(`<p>${limpio(b.x)}</p>`);
+    else if (b.t === "h") { const n = Math.min(4, Math.max(1, parseInt(b.n, 10) || 2)); out.push(`<h${n}>${limpio(b.x)}</h${n}>`); }
+    else if (b.t === "ul" || b.t === "ol") out.push(`<${b.t}>\n${(b.items || []).map((x) => `<li>${limpio(x)}</li>`).join("\n")}\n</${b.t}>`);
+    else if (b.t === "cita") out.push(`<blockquote><p>${limpio(b.x)}</p></blockquote>`);
+    else if (b.t === "hr") out.push(`<hr style="border: 0; border-top: 1px solid #d9d0cb; width: 60%; margin: 28px auto;" />`);
+    else if (b.t === "btn" && String(b.x || "").trim()) { const h = URL_OK.test(b.href || "") ? b.href : ""; out.push(centro(h ? `<a href="${esc(h)}" style="${BOTON}">${esc(b.x)}</a>` : `<span style="${BOTON}">${esc(b.x)}</span>`)); }
+    else if (b.t === "tabla") {
+      const filas = (Array.isArray(b.f) ? b.f : []).filter((f) => Array.isArray(f) && f.length);
+      if (filas.length) out.push(`<table>\n<tbody>\n${filas.map((f, n) => `<tr>${f.map((x) => `<td>${n === 0 ? `<b>${limpio(x)}</b>` : limpio(x)}</td>`).join("")}</tr>`).join("\n")}\n</tbody>\n</table>`);
+    } else if (b.t === "img") {
+      const imgs = (b.imgs || []).filter((i) => i && media[i.src]).map((i) => ({ ...media[i.src], alt: String(i.alt || "") })).slice(0, 3), pie = String(b.pie || "").trim();
+      if (imgs.length === 1) {
+        const i = imgs[0], f = ESCALA[b.w] || 1, W = +i.lw ? Math.round(i.lw * f) : 0, H = +i.lh ? Math.round(i.lh * f) : 0;
+        const clase = `${f === 1 ? `size-${i.ls === "full" ? "full" : "large"} ` : ""}wp-image-${i.id}`;
+        const foto = (c) => `<img class="${c}" src="${esc(i.lu || i.url)}" alt="${corch(i.alt)}"${W && H ? ` width="${W}" height="${H}"` : ""} />`;
+        if (pie && W) out.push(`[caption id="attachment_${i.id}" align="aligncenter" width="${W}"]${foto(clase)} ${corch(pie)}[/caption]`);
+        else { out.push(`<p>${foto("aligncenter " + clase)}</p>`); if (pie) out.push(centro(`<em>${esc(pie)}</em>`)); }
+      } else if (imgs.length > 1) {
+        // Varias fotos lado a lado: los artículos actuales del sitio no lo usan (apilan las fotos), así que lleva su propio acomodo
+        out.push(`<div style="display: grid; grid-template-columns: repeat(${imgs.length}, 1fr); gap: 10px; margin: 0 0 1.5em;">${imgs.map((i) => `<img class="wp-image-${i.id}" style="display: block; width: 100%; height: auto; aspect-ratio: 4 / 5; object-fit: cover;" src="${esc(i.lu || i.url)}" alt="${esc(i.alt)}"${+i.lw && +i.lh ? ` width="${i.lw}" height="${i.lh}"` : ""} />`).join("")}</div>`);
+        if (pie) out.push(centro(`<em>${esc(pie)}</em>`));
+      }
     }
   }
   return out.join("\n\n");
@@ -84,7 +105,7 @@ export async function manejar(req, env) {
       const r = await wp("/users/me?context=edit"); const d = await r.json().catch(() => ({}));
       if (!r.ok) return json({ conectado: false, error: errWP(d, r) });
       const c = d.capabilities || {};
-      return json({ conectado: true, usuario: d.name || U, sitio: WP, puede: { borradores: !!c.edit_posts, fotos: !!c.upload_files, publicar: !!c.publish_posts } });
+      return json({ conectado: true, usuario: d.name || U, sitio: WP, puede: { borradores: !!c.edit_posts, fotos: !!c.upload_files, publicar: !!c.publish_posts, formato: !!c.unfiltered_html } });
     }
     if (b.accion !== "enviar") return json({ error: "Acción no válida" }, 400);
     // 3) El artículo
@@ -111,30 +132,42 @@ export async function manejar(req, env) {
       const ru = await wp("/media", { method: "POST", headers: { "Content-Type": TIPOS[ext] || rf.headers.get("Content-Type") || "image/jpeg", "Content-Disposition": `attachment; filename="${nombre}"` }, body: bytes });
       const du = await ru.json().catch(() => ({}));
       if (!ru.ok || !du.id) { if (ru.status === 401 || ru.status === 403) return json({ error: errWP(du, ru) }, 502); avisos.push(`WordPress no aceptó una foto (${du.message || ru.status}).`); continue; }
-      media[f.src] = { id: du.id, url: du.source_url }; subidas++;
+      const md = du.media_details || {}, lg = (md.sizes && md.sizes.large) || {};   // "large" solo existe si la foto es más grande que ese tamaño
+      media[f.src] = { id: du.id, url: du.source_url, ls: lg.source_url ? "large" : "full", lu: lg.source_url || du.source_url, lw: +lg.width || +md.width || 0, lh: +lg.height || +md.height || 0 }; subidas++;
       if (f.alt) await wpJson(`/media/${du.id}`, { alt_text: f.alt }).catch(() => null);
     }
-    // 5) Categoría y etiquetas (por nombre): la categoría debe existir ya en WordPress; las etiquetas que falten se crean
-    const buscar = async (tax, nombre) => { const r = await wp(`/${tax}?search=${encodeURIComponent(nombre)}&per_page=100&_fields=id,name`); const l = r.ok ? await r.json().catch(() => []) : []; const x = (Array.isArray(l) ? l : []).find((t) => sinEnt(t.name).trim().toLowerCase() === nombre.toLowerCase()); return x ? x.id : 0; };
-    const categorias = []; const cat = String(seo.cat || "").trim();
-    if (cat) { const c = await buscar("categories", cat); if (c) categorias.push(c); else avisos.push(`La categoría “${cat}” no existe en WordPress; quedó sin categoría.`); }
+    // 5) Categoría (una, como en el sitio), etiquetas y autor. La categoría debe existir ya en WordPress; las etiquetas que falten se crean
+    // WordPress guarda «&» y los apóstrofos de otra forma, así que se busca por el tramo más largo de puras letras y luego se compara el nombre completo
+    const buscar = async (tax, nombre) => { const tramo = String(nombre).split(/[^\p{L}\p{N} ]+/u).map((x) => x.trim()).sort((x, y) => y.length - x.length)[0] || nombre; const r = await wp(`/${tax}?search=${encodeURIComponent(tramo)}&per_page=100&_fields=id,name,count`); const l = r.ok ? await r.json().catch(() => []) : []; return (Array.isArray(l) ? l : []).filter((t) => igual(t.name, nombre)).sort((x, y) => (y.count || 0) - (x.count || 0) || y.id - x.id); };
+    const categorias = []; const cat = String(seo.cat || "").trim(), catId = parseInt(seo.catId, 10) || 0;
+    if (catId) { const r = await wp(`/categories/${catId}?_fields=id,name`); const d = r.ok ? await r.json().catch(() => null) : null; if (d && d.id === catId && (!cat || igual(d.name, cat))) categorias.push(catId); }
+    if (!categorias.length && cat) { const c = (await buscar("categories", cat))[0]; if (c) categorias.push(c.id); else avisos.push(`La categoría “${cat}” no existe en WordPress; quedó sin categoría.`); }   // si hay dos con el mismo nombre, la más usada
     const etiquetas = [];
     for (const t of String(seo.tags || "").split(",").map((x) => x.trim()).filter(Boolean).slice(0, 15)) {
-      let e = await buscar("tags", t);
+      let e = ((await buscar("tags", t))[0] || {}).id || 0;
       if (!e) { const r = await wpJson("/tags", { name: t }); const d = await r.json().catch(() => ({})); e = r.ok ? d.id : (d.data && d.data.term_id) || 0; }
       if (e) etiquetas.push(e); else avisos.push(`No se pudo poner la etiqueta “${t}”.`);
     }
-    // 6) Crear el borrador o actualizar el que ya existe
+    let autor = 0; const firma = String(seo.autor || "").trim();
+    if (firma) { const r = await wp(`/users?search=${encodeURIComponent(firma)}&per_page=50&_fields=id,name`); const l = r.ok ? await r.json().catch(() => []) : []; autor = ((Array.isArray(l) ? l : []).find((u) => igual(u.name, firma)) || {}).id || 0; if (!autor) avisos.push(`“${firma}” no es un usuario de WordPress; el borrador quedó a nombre de quien conectó la app.`); }
+    // 6) Crear el borrador o actualizar el que ya existe. El extracto se deja vacío: en el sitio lo saca WordPress del texto
     const datos = {
-      title: titulo, content: aWordPress(cuerpo, media), slug: base, excerpt: String(seo.desc || ""),
+      title: titulo, content: aWordPress(cuerpo, media), slug: base,
       ...(post.imagen_path && media[post.imagen_path] ? { featured_media: media[post.imagen_path].id } : {}),
-      ...(categorias.length ? { categories: categorias } : {}), ...(etiquetas.length ? { tags: etiquetas } : {}),
+      ...(categorias.length ? { categories: categorias } : {}), ...(etiquetas.length ? { tags: etiquetas } : {}), ...(autor ? { author: autor } : {}),
       // Yoast SEO: se guardan solo si WordPress tiene habilitados estos campos para la API (si no, los ignora sin fallar)
       meta: { _yoast_wpseo_title: String(seo.titulo || ""), _yoast_wpseo_metadesc: String(seo.desc || ""), _yoast_wpseo_focuskw: String(seo.kw || "") },
     };
-    let r = null, d = null, nuevo = true;
-    if (previo.id) { r = await wpJson(`/posts/${previo.id}`, datos); d = await r.json().catch(() => ({})); nuevo = false; if (r.status === 404 || r.status === 410 || (d && d.code === "rest_post_invalid_id")) { r = null; nuevo = true; avisos.push("El borrador anterior ya no existía en WordPress; se creó uno nuevo."); } }
-    if (!r) { r = await wpJson("/posts", { ...datos, status: "draft" }); d = await r.json().catch(() => ({})); }
+    const guardar = async () => {
+      let r = null, d = null, nuevo = true;
+      if (previo.id) { r = await wpJson(`/posts/${previo.id}`, datos); d = await r.json().catch(() => ({})); nuevo = false; if (r.status === 404 || r.status === 410 || (d && d.code === "rest_post_invalid_id")) { r = null; nuevo = true; if (!avisos.some((a) => a.includes("ya no existía"))) avisos.push("El borrador anterior ya no existía en WordPress; se creó uno nuevo."); } }
+      if (!r) { r = await wpJson("/posts", { ...datos, status: "draft" }); d = await r.json().catch(() => ({})); }
+      return { r, d, nuevo };
+    };
+    let { r, d, nuevo } = await guardar();
+    if (!r.ok && datos.author && d && /author|others/i.test(String(d.code || ""))) {   // ese usuario no puede firmar por otra persona: se guarda a su nombre
+      delete datos.author; avisos.push(`No se pudo poner a “${firma}” como autor; el borrador quedó a nombre de quien conectó la app.`); ({ r, d, nuevo } = await guardar());
+    }
     if (!r.ok || !d.id) return json({ error: errWP(d, r), avisos }, 502);
     const yoast = !!(d.meta && Object.prototype.hasOwnProperty.call(d.meta, "_yoast_wpseo_metadesc"));
     if (!yoast && (seo.titulo || seo.desc || seo.kw)) avisos.push("El título SEO, la meta descripción y la palabra clave no se pudieron escribir en Yoast desde aquí; se copian a mano en el panel de Yoast del artículo.");

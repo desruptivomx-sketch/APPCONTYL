@@ -839,7 +839,7 @@ function renderPlataforma(){
     const ext = p => { const c = String(p.caption || "").replace(/\*\*/g, "").replace(/^#+\s*/gm, "").replace(/\s+/g, " ").trim(); return esc(c.slice(0, 190)) + (c.length > 190 ? "" : ""); };
     const h1 = p => p.copy || ((p.seo || {}).titulo || "").split("|")[0].trim() || "Sin título";
     html = `${editar}<div class="yl">
-      <div class="yl-top">search <span></span></div>
+      ${ylArriba()}
       <header class="yl-head"><div class="yl-logo">${Pp.foto_path ? `<img src="${esc(pfFoto("blog"))}" alt="">` : `<img src="icons/logo-color-texto.png" alt="YUC'ATÅLOVE">`}<span>TOGETHER AS ONE</span></div>
         <nav><span>Home</span><span>Services</span><span>About</span><span>Real Weddings</span><span class="on">Journal</span><span>Media</span><span>Contact</span></nav></header>
       <div class="yl-sec"><h2>${D("bio", "Start your wedding planning")}</h2><p>${esc(Pp.categoria || "Enjoy planning your wedding in Mexico. Get expert advice, timelines and resources to make sure your big day is better than you imagined.")}</p></div>
@@ -847,6 +847,7 @@ function renderPlataforma(){
           <div class="yl-img">${img(p) ? `<img src="${esc(full(p))}" alt="${esc((p.seo || {}).alt || "")}" loading="lazy">` : ph(p)}</div>
           <h3>${esc(h1(p))}</h3><p>${ext(p)}</p><span class="yl-more">Discover this wedding »</span>
           <span class="yl-meta">${esc(fmtCorto(p.fecha) || "sin fecha")}${(p.seo || {}).cat ? " · " + esc(p.seo.cat) : ""} ${chipSt(p)}</span></button>`).join("")}</div>` : vacio}
+      ${ylPie()}
     </div>`;
   }
   v.innerHTML = html;
@@ -956,7 +957,15 @@ function blLeer(root){
       if (items.length) out.push({ t: tag === "UL" ? "ul" : "ol", items }); return;
     }
     if (tag === "BLOCKQUOTE") { texto("cita", blInline(n)); return; }
-    if (tag === "FIGURE" || tag === "TABLE") { const x = blRecorta(blInline(n)); if (x) texto("p", x); return; }
+    if (b === "tabla" || tag === "TABLE") {
+      const tb = tag === "TABLE" ? n : n.querySelector("table"), filas = tb ? [...tb.rows] : [];
+      const f = filas.slice(0, 40).map(tr => [...tr.cells].slice(0, 8).map(c => blRecorta(blInline(c)))).filter(r => r.length), cols = Math.max(0, ...f.map(r => r.length));
+      if (cols >= 2 && (b === "tabla" || f.length >= 2)) { f.forEach(r => { while (r.length < cols) r.push(""); }); const llenas = f.filter(r => r.some(x => x)); if (llenas.length) out.push({ t: "tabla", f: llenas }); return; }   // las filas vacías no se guardan
+      if (b === "tabla") return;
+      // una sola columna o una sola fila: suele ser acomodo y no una tabla de datos; su contenido entra como texto normal
+      filas.forEach(tr => [...tr.cells].forEach(c => { if (c.querySelector(BL_BLOQUE)) contenedor(c); else texto("p", blInline(c)); })); return;
+    }
+    if (tag === "FIGURE") { const x = blRecorta(blInline(n)); if (x) texto("p", x); return; }
     if (n.querySelector(BL_BLOQUE)) contenedor(n); else texto("p", blInline(n));
   };
   contenedor(root);
@@ -973,6 +982,10 @@ function blHtml(c, edit){
     if (b.t === "cita") return `<blockquote>${blSan(b.x)}</blockquote>`;
     if (b.t === "hr") return edit ? `<div class="b-hr"${ce} data-b="hr"><hr></div>` : "<hr>";
     if (b.t === "btn") { const h = blUrl(b.href); return edit ? `<div class="b-btn"${ce} data-b="btn" data-x="${esc(b.x)}" data-href="${esc(h)}"><span>${esc(b.x)}</span></div>` : `<p class="b-btn"><a${h ? ` href="${esc(h)}"` : ""}>${esc(b.x)}</a></p>`; }
+    if (b.t === "tabla") {   // la primera fila es el encabezado (en negritas, como las tablas del sitio); en la hoja cada celda se escribe aparte
+      const f = (Array.isArray(b.f) ? b.f : []).filter(r => Array.isArray(r) && r.length); if (!f.length) return "";
+      return `<div class="b-tabla"${edit ? `${ce} data-b="tabla"` : ""}><table><tbody>${f.map(r => `<tr>${r.map(x => `<td${edit ? ' contenteditable="true"' : ""}>${blSan(x) || (edit ? "<br>" : "")}</td>`).join("")}</tr>`).join("")}</tbody></table></div>`;
+    }
     if (b.t === "img") {
       const imgs = (b.imgs || []).filter(i => i && i.src).slice(0, 3), w = BL_W[b.w] ? b.w : "g"; if (!imgs.length) return "";
       return `<figure class="b-img b-${w}${imgs.length > 1 ? " b-fila" : ""}"${imgs.length > 1 ? ` style="--n:${imgs.length}"` : ""}${edit ? `${ce} data-b="img" data-w="${w}" data-pie="${esc(b.pie || "")}"` : ""}>${imgs.map(i => `<img src="${esc(urlOf(i.src))}" alt="${esc(i.alt || "")}"${edit ? ` data-src="${esc(i.src)}" draggable="false"` : ' loading="lazy"'}>`).join("")}${b.pie ? `<figcaption>${esc(b.pie)}</figcaption>` : ""}</figure>`;
@@ -981,7 +994,7 @@ function blHtml(c, edit){
   }).join("");
 }
 const blImgs = c => (Array.isArray(c) ? c : []).flatMap(b => b && b.t === "img" ? (b.imgs || []).map(i => i && i.src).filter(Boolean) : []);
-const blTexto = c => (Array.isArray(c) ? c : []).map(b => !b ? "" : (b.t === "ul" || b.t === "ol") ? (b.items || []).map(x => "• " + blPlano(x)).join("\n") : (b.t === "p" || b.t === "h" || b.t === "cita") ? blPlano(b.x) : "").filter(Boolean).join("\n\n");
+const blTexto = c => (Array.isArray(c) ? c : []).map(b => !b ? "" : (b.t === "ul" || b.t === "ol") ? (b.items || []).map(x => "• " + blPlano(x)).join("\n") : (b.t === "p" || b.t === "h" || b.t === "cita") ? blPlano(b.x) : b.t === "tabla" ? (b.f || []).map(r => (r || []).map(blPlano).join(" | ")).join("\n") : "").filter(Boolean).join("\n\n");
 // Texto de antes (escrito en el Caption, con ## para subtítulos y **negritas**) → bloques
 function blDesdeTexto(txt){
   return String(txt || "").split(/\n{2,}/).map(b => b.trim()).filter(Boolean).map(b => {
@@ -1080,7 +1093,7 @@ function blIrA(p){
   return false;
 }
 function blOrdenar(){
-  if (!blDoc.querySelector(":scope > p ul, :scope > p ol, :scope > p blockquote, :scope > p h1, :scope > p h2, :scope > p h3, :scope > p h4, :scope > div, :scope > blockquote p, :scope > h1 ul, :scope > h2 ul, :scope > h3 ul, :scope > h4 ul")) return;
+  if (!blDoc.querySelector(":scope > p [data-b], :scope > p ul, :scope > p ol, :scope > p blockquote, :scope > p h1, :scope > p h2, :scope > p h3, :scope > p h4, :scope > div, :scope > blockquote p, :scope > h1 ul, :scope > h2 ul, :scope > h3 ul, :scope > h4 ul")) return;
   // mover nodos descoloca el cursor: se anota dónde estaba (los nodos son los mismos, solo cambian de lugar) y se repone al final
   const cur = blCursor();
   [...blDoc.children].forEach(n => {
@@ -1105,6 +1118,14 @@ function blCmd(k){
   if (k === "img") { blDestino = null; $("bl-file").click(); return; }
   if (k === "btn") { blSeleccionar(blInsertar(blHtml([{ t: "btn", x: "Texto del botón", href: "" }], true))); blCambio(); const i = blCtx.querySelector('[data-cx="btn-x"]'); if (i) { i.focus(); i.select(); } return; }
   if (k === "hr") { blInsertar(blHtml([{ t: "hr" }], true)); blCambio(); return; }
+  if (k === "tabla") { const n = blInsertar(blHtml([{ t: "tabla", f: [["", "", ""], ["", "", ""], ["", "", ""]] }], true)); blSeleccionar(n, true); blCambio(); blCursorCelda(n.querySelector("td")); return; }
+  const celda = blCelda();
+  if (celda) {   // dentro de una celda solo hay formato de letra; los estilos de bloque romperían la tabla
+    if (k === "b" && celda.parentNode.rowIndex === 0) blAviso("El encabezado de la tabla ya va en negritas.");
+    else if (k === "b" || k === "i") { document.execCommand(k === "b" ? "bold" : "italic"); blCambio(); }
+    else blAviso("Dentro de una tabla solo se usan negritas y cursiva.");
+    return;
+  }
   blQuitarSel(); blFoco();
   if (k === "a") { blCtxEnlace(); return; }
   const antes = /^(ul|ol)$/.test(k) && getSelection().isCollapsed ? blPos() : null;
@@ -1122,6 +1143,12 @@ function blCmd(k){
   blEstado(); blCambio();
 }
 blDoc.addEventListener("keydown", e => {
+  const td = e.target.closest ? e.target.closest('[data-b="tabla"] td') : null;
+  if (td) {   // en una tabla: Enter baja de renglón dentro de la celda y Tab pasa a la celda siguiente
+    if (e.key === "Enter" && !e.isComposing) { e.preventDefault(); document.execCommand("insertLineBreak"); }
+    else if (e.key === "Tab") { const cs = [...td.closest("table").querySelectorAll("td")], sig = cs[cs.indexOf(td) + (e.shiftKey ? -1 : 1)]; if (sig) { e.preventDefault(); blCursorCelda(sig); } }
+    return;
+  }
   if (e.key !== "Enter" || e.shiftKey || e.isComposing) return;
   const n = getSelection().anchorNode, el = n && (n.nodeType === 1 ? n : n.parentElement), b = el && el.closest("h1,h2,h3,h4,blockquote");
   // Enter en un título o cita vacíos: vuelve a texto normal (para "salir" del estilo)
@@ -1134,6 +1161,7 @@ blDoc.addEventListener("paste", e => {
   e.preventDefault();
   const fotos = [...(cd.files || [])].filter(f => f.type.startsWith("image/"));
   if (fotos.length) { blSubirFotos(fotos, null); return; }
+  if (e.target.closest && e.target.closest('[data-b="tabla"] td')) { const t = (cd.getData("text/plain") || "").replace(/\s*\n+\s*/g, " "); if (t.trim()) document.execCommand("insertText", false, t); blCambio(); return; }
   const html = cd.getData("text/html"), txt = cd.getData("text/plain");
   let limpio = "";
   if (html) { const c = blLeer(blInerte(html)).filter(b => b.t !== "img" && b.t !== "btn"); limpio = c.length === 1 && c[0].t === "p" ? c[0].x : blHtml(c, true); }
@@ -1162,8 +1190,17 @@ function blInsertar(html, ref){
   return nodo;
 }
 function blQuitarSel(){ if (blIsla) blIsla.classList.remove("sel"); blIsla = null; blCtx.classList.add("hidden"); blCtx.innerHTML = ""; }
-function blSeleccionar(el){ if (!el) return; blQuitarSel(); blIsla = el; el.classList.add("sel"); getSelection().removeAllRanges(); blCtxIsla(); }
-blDoc.addEventListener("click", e => { const isla = e.target.closest("[data-b]"); if (isla && blDoc.contains(isla)) { e.preventDefault(); blSeleccionar(isla); } else blQuitarSel(); });
+function blSeleccionar(el, conCursor){ if (!el) return; blQuitarSel(); blIsla = el; el.classList.add("sel"); if (!conCursor) getSelection().removeAllRanges(); blCtxIsla(); }
+blDoc.addEventListener("click", e => {
+  const isla = e.target.closest("[data-b]");
+  if (!isla || !blDoc.contains(isla)) { blQuitarSel(); return; }
+  if (isla.dataset.b === "tabla" && e.target.closest("td")) { if (blIsla !== isla) blSeleccionar(isla, true); return; }   // clic en una celda: se escribe ahí
+  e.preventDefault(); blSeleccionar(isla);
+});
+blDoc.addEventListener("focusin", e => { const td = e.target.closest && e.target.closest('[data-b="tabla"] td'), isla = td && td.closest("[data-b]"); if (isla && blIsla !== isla) blSeleccionar(isla, true); });
+// La celda de tabla donde está el cursor (o ninguna) y poner el cursor en una celda
+function blCelda(){ const sel = getSelection(), n = sel.rangeCount ? sel.anchorNode : null, el = n && (n.nodeType === 1 ? n : n.parentElement), td = el && el.closest ? el.closest("td") : null; return td && blDoc.contains(td) && td.closest('[data-b="tabla"]') ? td : null; }
+function blCursorCelda(td){ if (!td) return; td.focus({ preventScroll: true }); const r = document.createRange(); r.selectNodeContents(td); r.collapse(false); const sel = getSelection(); sel.removeAllRanges(); sel.addRange(r); }
 document.addEventListener("keydown", e => {
   if (!blIsla || !current || e.target.closest("input,textarea,select,[contenteditable=true]")) return;
   if (e.key === "Backspace" || e.key === "Delete") { e.preventDefault(); blAccion("quitar"); }
@@ -1180,6 +1217,8 @@ function blCtxIsla(){
       + `<div class="fila"><input type="text" data-cx="pie" maxlength="200" aria-label="Pie de foto" placeholder="Pie de foto (opcional), por ejemplo el crédito del fotógrafo" value="${esc(el.dataset.pie || "")}"></div>`;
   } else if (t === "btn") {
     h = `<div class="fila"><b>Botón</b><input type="text" data-cx="btn-x" maxlength="80" aria-label="Texto del botón" placeholder="Texto del botón" value="${esc(el.dataset.x || "")}"><input type="url" data-cx="btn-href" aria-label="Enlace del botón" placeholder="A dónde lleva: https://www.yucatanlove.com/…" value="${esc(el.dataset.href || "")}">${mover}</div>`;
+  } else if (t === "tabla") {
+    h = `<div class="fila"><b>Tabla</b><button type="button" class="btn ghost small" data-cx="t-fila" title="Agregar una fila debajo de donde estás escribiendo">＋ Fila</button><button type="button" class="btn ghost small" data-cx="t-col" title="Agregar una columna a la derecha de donde estás escribiendo">＋ Columna</button><button type="button" class="btn ghost small" data-cx="t-nofila" title="Quitar la fila donde estás escribiendo">− Fila</button><button type="button" class="btn ghost small" data-cx="t-nocol" title="Quitar la columna donde estás escribiendo">− Columna</button>${mover}</div><div class="fila"><span class="note">La primera fila es el encabezado y sale en negritas. Tab pasa a la celda siguiente.</span></div>`;
   } else h = `<div class="fila"><b>Línea separadora</b>${mover}</div>`;
   blCtx.innerHTML = h; blCtx.classList.remove("hidden");
 }
@@ -1211,6 +1250,16 @@ function blAccion(k, el){
   else if (k === "btn-x") { f.dataset.x = el.value; f.querySelector("span").textContent = el.value || "Texto del botón"; }
   else if (k === "btn-href") f.dataset.href = el.value.trim();
   else if (k === "w") { f.dataset.w = el.dataset.v; f.classList.remove("b-g", "b-m", "b-ch"); f.classList.add("b-" + el.dataset.v); blCtxIsla(); }
+  else if (k.startsWith("t-")) {   // filas y columnas de la tabla, junto a la celda donde está el cursor (o al final)
+    const tb = f.querySelector("table"), td = blCelda(), cel = td && tb.contains(td) ? td : null, filas = [...tb.rows], nc = filas[0] ? filas[0].cells.length : 0;
+    const fi = cel ? cel.parentNode.rowIndex : filas.length - 1, ci = cel ? cel.cellIndex : nc - 1;
+    const nueva = () => { const c = document.createElement("td"); c.setAttribute("contenteditable", "true"); c.innerHTML = "<br>"; return c; };
+    if (k === "t-fila" && filas.length < 40) { const tr = document.createElement("tr"); for (let i = 0; i < nc; i++) tr.appendChild(nueva()); filas[fi].after(tr); blCursorCelda(tr.cells[ci]); }
+    else if (k === "t-col" && nc < 8) { filas.forEach(tr => tr.cells[ci].after(nueva())); blCursorCelda(filas[fi].cells[ci + 1]); }
+    else if (k === "t-nofila" && filas.length > 1) { filas[fi].remove(); blCursorCelda(tb.rows[Math.min(fi, tb.rows.length - 1)].cells[ci]); }
+    else if (k === "t-nocol" && nc > 2) { filas.forEach(tr => tr.cells[ci].remove()); blCursorCelda(filas[fi].cells[Math.min(ci, nc - 2)]); }
+    else { blAviso(k === "t-nofila" ? "La tabla necesita al menos una fila." : k === "t-nocol" ? "La tabla necesita al menos dos columnas." : "La tabla ya no admite más."); return; }
+  }
   else if (k === "arriba") { const a = f.previousElementSibling; if (a) a.before(f); f.scrollIntoView({ block: "nearest" }); }
   else if (k === "abajo") { const s = f.nextElementSibling; if (s) s.after(f); if (!f.nextElementSibling) { const p = document.createElement("p"); p.innerHTML = "<br>"; f.after(p); } f.scrollIntoView({ block: "nearest" }); }
   else if (k === "texto-arriba") { const p = document.createElement("p"); p.innerHTML = "<br>"; f.before(p); blQuitarSel(); blCursorEn(p); }
@@ -1253,13 +1302,13 @@ async function blSubirFotos(files, dest){
 $("e-tipo").addEventListener("change", () => { if (current && esBlogEd() && !blDoc.textContent.trim() && !blDoc.querySelector("[data-b]")) { blDoc.innerHTML = blHtml(bloquesDe(Object.assign({}, current, { cuerpo: current.cuerpo, caption: $("e-caption").value })), true); } wpPintar(); });
 
 /* ---------- Pasar el artículo a WordPress ----------
-   1) Copiar con formato y descargar las fotos: funciona siempre (se pega en WordPress o en un widget de texto de Elementor).
+   1) Copiar con formato y descargar las fotos: funciona siempre (se pega en el editor de WordPress).
    2) Enviar como borrador: lo hace la función "wp" de Supabase con la clave de aplicación de WordPress (guardada allá,
       nunca en la app). Sube las fotos a la biblioteca de WordPress, arma el artículo y lo deja como borrador. Solo quien administra. */
 const wpMsg = (t, warn) => { const m = $("wp-msg"); m.textContent = t || ""; m.classList.toggle("warn", !!warn); };
 function blHtmlCopia(c){
   let n = 0;
-  return (Array.isArray(c) ? c : []).map(b => b.t === "img" ? (b.imgs || []).map(i => `<p><em>[Imagen ${++n}${i.alt ? ": " + esc(i.alt) : ""}]</em></p>`).join("") + (b.pie ? `<p><em>${esc(b.pie)}</em></p>` : "") : blHtml([b], false)).join("\n");
+  return (Array.isArray(c) ? c : []).map(b => b.t === "img" ? (b.imgs || []).map(i => `<p><em>[Imagen ${++n}${i.alt ? ": " + esc(i.alt) : ""}]</em></p>`).join("") + (b.pie ? `<p><em>${esc(b.pie)}</em></p>` : "") : b.t === "tabla" ? `<table><tbody>${(b.f || []).map((r, k) => `<tr>${(r || []).map(x => `<td>${k === 0 ? `<b>${blSan(x)}</b>` : blSan(x)}</td>`).join("")}</tr>`).join("")}</tbody></table>` : blHtml([b], false)).join("\n");
 }
 async function copiarRico(html, texto){
   try { if (navigator.clipboard && window.ClipboardItem) { await navigator.clipboard.write([new ClipboardItem({ "text/html": new Blob([html], { type: "text/html" }), "text/plain": new Blob([texto], { type: "text/plain" }) })]); return true; } } catch (_) {}
@@ -1318,14 +1367,30 @@ function wpPintar(){
 
 /* ---------- Vista del artículo del blog (calcada de una entrada de yucatanlove.com) ---------- */
 let blgPost = null;
+// Partes fijas del sitio (revisadas el 24 nov 2026): barra de arriba con buscador y redes, y pie de página
+function ylIco(k){
+  return { fb: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M13.5 22v-8h2.7l.4-3.2h-3.1V8.7c0-.9.3-1.6 1.6-1.6h1.7V4.2c-.3 0-1.3-.1-2.5-.1-2.5 0-4.1 1.5-4.1 4.2v2.4H7.4V14h2.8v8z"/></svg>',
+    ig: '<svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="5"/><circle cx="12" cy="12" r="4"/><circle cx="17.3" cy="6.7" r="1.1" fill="currentColor" stroke="none"/></svg>',
+    pin: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2a10 10 0 0 0-3.6 19.3c-.1-.8-.2-2 0-2.9l1.2-5s-.3-.6-.3-1.5c0-1.4.8-2.5 1.8-2.5.9 0 1.3.6 1.3 1.4 0 .9-.6 2.2-.8 3.4-.2 1 .5 1.8 1.5 1.8 1.8 0 3.2-1.9 3.2-4.7 0-2.4-1.7-4.1-4.2-4.1a4.4 4.4 0 0 0-4.6 4.4c0 .9.3 1.8.8 2.3.1.1.1.2.1.3l-.3 1.2c0 .2-.2.2-.4.1-1.3-.6-2-2.4-2-3.9 0-3.2 2.3-6.1 6.7-6.1 3.5 0 6.2 2.5 6.2 5.8 0 3.5-2.2 6.3-5.2 6.3-1 0-2-.5-2.3-1.2l-.6 2.4c-.2.9-.8 2-1.2 2.6A10 10 0 1 0 12 2z"/></svg>',
+    tw: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M22 5.9c-.7.3-1.5.5-2.4.6.9-.5 1.5-1.3 1.8-2.3-.8.5-1.7.8-2.6 1a4.1 4.1 0 0 0-7 3.7A11.6 11.6 0 0 1 3.4 4.7a4.1 4.1 0 0 0 1.3 5.5c-.7 0-1.3-.2-1.9-.5 0 2 1.4 3.7 3.3 4.1-.6.2-1.2.2-1.8.1.5 1.6 2 2.8 3.8 2.8A8.2 8.2 0 0 1 2 18.4a11.6 11.6 0 0 0 6.3 1.8c7.5 0 11.7-6.3 11.7-11.7v-.5c.8-.6 1.5-1.3 2-2.1z"/></svg>',
+    mail: '<svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="5" width="18" height="14" rx="1.5"/><path d="M3.5 6.5 12 13l8.5-6.5"/></svg>' }[k] || "";
+}
+function ylArriba(){ return `<div class="yl-top">search <span></span><i class="yl-soc">${ylIco("fb")}${ylIco("ig")}${ylIco("pin")}</i></div>`; }
+function ylPie(){ return `<footer class="yl-foot"><nav><span>Home</span><span>Services</span><span>About</span><span>Real Weddings</span><span>Journal</span><span>Media</span><span>Contact</span></nav><i class="yl-soc">${ylIco("fb")}${ylIco("ig")}${ylIco("pin")}</i><p>From Yucatan with ❤️ to the world</p><b>YUCATANLOVE</b><p>999 291 2666 · Av. Colón #201, García Ginerés, 97070 Mérida, Yucatán, México</p><span>Privacy Policy</span></footer>`; }
 function htmlArticulo(p, conSeo){
   const s = p.seo || {};
   const d = p.fecha ? new Date(p.fecha + "T12:00:00") : null, mes = d ? d.toLocaleString("en-US", { month: "short" }) : "";
-  const h1 = p.copy || (s.titulo || "").split("|")[0].trim() || "Sin título";
+  const tit = x => x.copy || ((x.seo || {}).titulo || "").split("|")[0].trim() || "Sin título", h1 = tit(p);
   const tags = String(s.tags || "").split(",").map(x => x.trim()).filter(Boolean);
-  const rel = posts.filter(x => x.id !== p.id && x.tipo === "Blog").slice(0, 4);
+  const otros = posts.filter(x => x.id !== p.id && x.tipo === "Blog"), rel = otros.slice(0, 4);
+  const dmy = f => f ? String(f).slice(0, 10).split("-").reverse().join("/") : "";          // 13/02/2025, como las pone el sitio
+  // Anterior y siguiente: el sitio los ordena por fecha
+  const orden = otros.filter(x => x.fecha).concat(p.fecha ? [p] : []).sort((a, b) => a.fecha < b.fecha ? -1 : a.fecha > b.fecha ? 1 : 0), yo = orden.indexOf(p);
+  const ant = yo > 0 ? orden[yo - 1] : null, sig = yo >= 0 && yo < orden.length - 1 ? orden[yo + 1] : null;
+  // Orden de la página, igual que una entrada del sitio: imagen destacada con la fecha · categoría · título · texto ·
+  // TAGS (solo si tiene) · comentarios y compartir · You May Also Like · Leave a Comment · anterior/siguiente · pie.
   return `<div class="yl yl-post">
-    <div class="yl-top">search <span></span></div>
+    ${ylArriba()}
     <header class="yl-head"><div class="yl-logo"><img src="icons/logo-color-texto.png" alt="YUC'ATÅLOVE"><span>TOGETHER AS ONE</span></div><nav><span>Home</span><span>Services</span><span>About</span><span>Real Weddings</span><span class="on">Journal</span><span>Media</span><span>Contact</span></nav></header>
     <div class="ylp-hero">${(p._portada || p.imagen_path) ? `<img src="${esc(p._portada || urlOf(p.imagen_path) || thumbUrl(p.imagen_path))}" alt="${esc(s.alt || "")}">` : `<div class="ylp-noimg">Imagen destacada (1200×558)</div>`}
       ${d ? `<div class="ylp-date"><b>${d.getDate()}</b><span>${esc(mes)}</span><span>${d.getFullYear()}</span></div>` : ""}</div>
@@ -1333,10 +1398,14 @@ function htmlArticulo(p, conSeo){
       <span class="ylp-cat">${esc(s.cat || "Sin categoría")}</span>
       <h1>${esc(h1)}</h1>
       <div class="ylp-txt">${p._slot ? '<div id="bl-slot"></div>' : (blHtml(bloquesDe(p), false).replace(/<a href=/g, '<a target="_blank" rel="noopener" href=') || "<p><em>Aún no hay texto. Ábrelo para editar y escribe sobre la página.</em></p>")}</div>
-      <div class="ylp-tags"><span>TAGS:</span>${tags.length ? tags.map(t => `<a>${esc(t)}</a>`).join("") : "<em>sin etiquetas</em>"}</div>
-      <div class="ylp-by">Written by <b>${esc(s.autor || "—")}</b> · Est. reading time <b id="ylp-min">${minLectura(blTexto(bloquesDe(p)))}</b><b> minutes</b></div>
-      ${rel.length ? `<h3 class="ylp-rel-t">You May Also Like</h3><div class="ylp-rel">${rel.map(r => `<div><div class="yl-img">${r.imagen_path ? `<img src="${esc(thumbUrl(r.imagen_path))}" alt="">` : ""}</div><h4>${esc(r.copy || "Sin título")}</h4></div>`).join("")}</div>` : ""}
+      ${tags.length ? `<div class="ylp-tags"><span>TAGS:</span>${tags.map(t => `<a>${esc(t)}</a>`).join("")}</div>` : ""}
+      <div class="ylp-pie"><span>0 Comments</span><span class="ylp-share">Share ${ylIco("fb")}${ylIco("tw")}${ylIco("pin")}${ylIco("mail")}</span></div>
+      ${rel.length ? `<h3 class="ylp-rel-t">You May Also Like</h3><div class="ylp-rel">${rel.map(r => `<div><div class="yl-img">${r.imagen_path ? `<img src="${esc(thumbUrl(r.imagen_path))}" alt="">` : ""}</div><h4>${esc(tit(r))}</h4><time>${esc(dmy(r.fecha))}</time></div>`).join("")}</div>` : ""}
+      <div class="ylp-coment"><h3 class="ylp-rel-t">Leave a Comment</h3><div class="ylp-caja"></div><div class="ylp-campos"><span></span><span></span><span></span></div></div>
+      ${ant || sig ? `<div class="ylp-nav"><div>${ant ? `<small>Previous Post</small><b>${esc(tit(ant))}</b>` : ""}</div><div class="der">${sig ? `<small>Next Post</small><b>${esc(tit(sig))}</b>` : ""}</div></div>` : ""}
     </div>
+    ${ylPie()}
+    <p class="ylp-nota">No se ve en la página, pero Google y las redes lo muestran junto al enlace: escrito por <b>${esc(s.autor || "—")}</b> · <b id="ylp-min">${minLectura(blTexto(bloquesDe(p)))}</b> min de lectura.</p>
     ${conSeo ? `<div class="ylp-seo"><h4>Lo que verá Google y el equipo web</h4>
       ${[["Título SEO", s.titulo], ["Meta descripción", s.desc], ["URL", s.slug ? "https://www.yucatanlove.com/" + s.slug + "/" : ""], ["Palabra clave", s.kw], ["Categoría", s.cat], ["Etiquetas", s.tags], ["Autor", s.autor], ["Alt de la imagen", s.alt], ["H1", h1], ["Texto", blTexto(bloquesDe(p))]].map(([l, v]) => `<div class="ylp-f"><span>${l}</span><p>${esc(v ? (l === "Texto" ? String(v).slice(0, 220) + (String(v).length > 220 ? "…" : "") : v) : "— falta —")}</p>${v ? `<button type="button" class="btn ghost small" data-cp="${esc(l)}">Copiar</button>` : ""}</div>`).join("")}
     </div>` : ""}</div>`;
@@ -1780,19 +1849,43 @@ $("e-files").addEventListener("change", async e => {
   if (await guardarSlides(s.concat(nuevas))) { pvIdx = s.length; renderPreview(); renderSlides(); emsg(`${nuevas.length === 1 ? "Imagen agregada" : nuevas.length + " imágenes agregadas"} al carrusel.`); }
 });
 
-/* ---------- SEO del blog (calcado de yucatanlove.com: Rank Math, Article + FAQ, TAGS, autor y tiempo de lectura) ---------- */
+/* ---------- SEO del blog (calcado de yucatanlove.com: Yoast SEO, categoría, TAGS, autor y tiempo de lectura) ---------- */
+/* Lo que existe hoy en el WordPress del sitio (revisado el 24 nov 2026), para que el artículo salga con la misma categoría,
+   etiquetas y autor que los demás. Categorías: [id en WordPress, nombre tal cual, id de su categoría madre]; primero las del
+   árbol actual (Experience Mexican Wedding), que es el que usan los artículos recientes. Si crean una nueva se puede escribir a mano. */
+const WP_CATS = [[263,"Experience Mexican Wedding",0],
+  [257,"Wedding Planning",263],[271,"Wedding Planner",257],[273,"Wedding Ceremony",257],[272,"Wedding Preparation",257],[270,"Wedding Budget",257],[274,"Wedding Wellness",257],
+  [258,"Wedding Themes",263],[292,"Wedding Details",258],[291,"Wedding Styles",258],[293,"Wedding Floral",258],
+  [260,"Wedding Services",263],[288,"Fun Wedding Activities",260],[286,"Wedding Art",260],[285,"Wedding Music",260],[275,"Wedding Catering",260],[277,"Wedding Food",275],[278,"Wedding Drinks",275],
+  [262,"Travel Advisory Yucatan",263],[281,"Travel Experience",262],[282,"Adventure Travel",262],[283,"Best honeymoon destinations in Mexico",262],
+  [256,"Wedding Venues",263],[279,"Beach Wedding",256],[121,"Celestun Beach",279],[122,"Cozumel Island",279],[139,"Holbox Island",279],[269,"Hotel Villas Caracol",279],[310,"Hacienda Xtepén",256],
+  [255,"Hacienda Wedding Venue",256],[309,"Casa Palomeque",255],[119,"Cenote X'Batun",255],[120,"Chablé Resort",255],[123,"Hacienda Chichí Suárez",255],[312,"Hacienda Chuntuac",255],[124,"Hacienda Dzibikak",255],
+  [125,"Hacienda Itzincab Cámara",255],[126,"Hacienda Sac Chich",255],[296,"Hacienda San Antonio Hool",255],[127,"Hacienda San Diego Cutz",255],[128,"Hacienda San Jose Cholul",255],[267,"Hacienda San Pedro Ochil",255],
+  [129,"Hacienda Santa Cruz",255],[298,"Hacienda Santa Lucía Kantoyná",255],[280,"Hacienda Santa Rosa",255],[130,"Hacienda Selva Maya",255],[131,"Hacienda Sotuta de Peón",255],[132,"Hacienda Suytunchen",255],
+  [133,"Hacienda Tamchen",255],[134,"Hacienda Tekik de Regil",255],[136,"Hacienda Temozon",255],[137,"Hacienda Texán de Palomeque",255],[138,"Hacienda Uayamon",255],[297,"Hacienda Xcanatun",255],
+  [268,"Hacienda Yaxcopoil",255],[140,"Mansion Hotel",255],[141,"Quinta Montes Molina",255],
+  [143,"Wedding Beauty and Wellness",0],[144,"Makeup",143],[261,"Wedding Look",143],[289,"Elegant Couple",261],[290,"Wedding Guest Looks",261],
+  [72,"Wedding Essentials",0],[154,"Ideas & Tips",72],[147,"Destination Wedding",72],[148,"Beach Wedding",147],[150,"Cenote Wedding",147],[149,"Religious Wedding",72],[151,"Legal Wedding",72],[152,"Symbolic Wedding",72],[155,"Catering",72],[156,"Favor",72],
+  [157,"Wedding Fashion",0],[158,"Bridal and Groom´s Wear",157],[159,"Jewelry and Accesories",157],[161,"Guest",157],[164,"Wedding Planner",0]];
+const WP_TAGS = ["Residential Retreats","Ideas & Tips","Destination Wedding","Wedding Planner","Religious Wedding","Jewelry and Accesories","Symbolic Wedding","Bridal and Groom´s Wear","Hacienda Temozón Sur","Hacienda Uayamón","Catering","Wellness","yucatan weddings","Cenote Wedding","cenote xbatun","Favor","Hindu wedding","Legal Wedding","Makeup","chinese wedding","lgbt wedding","Mayan wedding","travel experience","Wedding symbols","Hacienda Sac Chich"];
+const WP_AUTORES = ["Karen Solis","Evi Escobedo","Ivonne de YucatánLove","Content Manager"];
+const YL_SUFIJO = " - YUC'ATÅLOVE 💕 Wedding Planners";   // así completa Yoast el título en Google cuando no se escribe un título SEO propio
+const wpNorma = t => String(t || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
+const catDe = n => { n = wpNorma(n); return n ? WP_CATS.find(c => wpNorma(c[1]) === n) || null : null; };   // si hay dos con el mismo nombre, la del árbol actual
+const catRuta = c => { const r = []; let m = WP_CATS.find(x => x[0] === c[2]); while (m && r.length < 4) { r.unshift(m[1]); const pid = m[2]; m = WP_CATS.find(x => x[0] === pid); } return r.join(" › "); };
 const SEO_K = { titulo: "seo-titulo", desc: "seo-desc", slug: "seo-slug", kw: "seo-kw", cat: "seo-cat", autor: "seo-autor", tags: "seo-tags", alt: "seo-alt" };
 const slugify = s => String(s || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().replace(/&/g, " and ").replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").replace(/-+/g, "-").slice(0, 75).replace(/-+$/, "");
 const palabras = t => (String(t || "").trim().match(/\S+/g) || []).length;
 const minLectura = t => Math.max(1, Math.round(palabras(t) / 200));
-function seoLeer(){ const o = {}; Object.entries(SEO_K).forEach(([k, id]) => { const v = $(id).value.trim(); if (v) o[k] = k === "slug" ? slugify(v) : v; }); return o; }
+function seoLeer(){ const o = {}; Object.entries(SEO_K).forEach(([k, id]) => { const v = $(id).value.trim(); if (v) o[k] = k === "slug" ? slugify(v) : v; }); const c = catDe(o.cat); if (c) o.catId = c[0]; return o; }
 function seoCargar(p){ const s = (p && p.seo) || {}; Object.entries(SEO_K).forEach(([k, id]) => { $(id).value = s[k] || ""; }); seoToggle(); seoPintar(); }
 function seoToggle(){ $("seo-box").classList.toggle("hidden", $("e-tipo").value !== "Blog"); }
 function seoPintar(){
   const cuerpo = esBlogEd() ? blLeer(blDoc) : [];
   const s = seoLeer(), h1 = $("e-copy").value.trim(), body = esBlogEd() ? blTexto(cuerpo) : $("e-caption").value, kw = (s.kw || "").toLowerCase();
   const subt = cuerpo.filter(b => b.t === "h"), fotos = cuerpo.filter(b => b.t === "img").flatMap(b => b.imgs || []);
-  const t = s.titulo || h1 || "Título del artículo", d = s.desc || body.slice(0, 155) || "Meta descripción…";
+  const sueltos = cuerpo.flatMap(b => [b.x, ...(b.items || []), ...(b.f || []).flat()]).filter(Boolean).join(" ");   // todo el texto con sus enlaces
+  const t = s.titulo || (h1 ? h1 + YL_SUFIJO : "Título del artículo"), d = s.desc || body.slice(0, 155) || "Meta descripción…";
   $("seo-t-c").textContent = `${(s.titulo || "").length}/60`; $("seo-t-c").className = "cnt" + ((s.titulo || "").length > 60 ? " mal" : "");
   $("seo-d-c").textContent = `${(s.desc || "").length}/155`; $("seo-d-c").className = "cnt" + ((s.desc || "").length > 160 ? " mal" : "");
   $("seo-preview").innerHTML = `<div class="sg-site"><span class="sg-fav">Y</span><div><b>YUC'ATÅLOVE</b><span>https://www.yucatanlove.com › ${esc(s.slug || slugify(h1) || "…")}</span></div></div>
@@ -1814,10 +1907,31 @@ function seoPintar(){
     [subt.some(b => has(blPlano(b.x))), "La palabra clave aparece en algún subtítulo"],
     [fotos.length > 0, `Tiene imágenes dentro del texto (lleva ${fotos.length})`],
     [fotos.length > 0 && fotos.every(f => (f.alt || "").trim()), "Todas las imágenes del texto tienen texto alternativo"],
-    [!!s.cat, "Tiene categoría"], [!!s.tags, "Tiene etiquetas (TAGS)"], [!!s.alt, "La imagen destacada tiene texto alternativo"],
+    [!!catDe(s.cat), s.cat && !catDe(s.cat) ? `La categoría “${s.cat}” no está entre las del sitio` : "Tiene una categoría del sitio"], [!!s.tags, "Tiene etiquetas (TAGS)"], [!!s.alt, "La imagen destacada tiene texto alternativo"],
+    // Armado como los artículos del sitio
+    [cuerpo.length > 0 && cuerpo[0].t === "p", "Empieza con una introducción antes del primer subtítulo"],
+    [/href="https?:\/\/(www\.)?yucatanlove\.com/i.test(sueltos) || cuerpo.some(b => b.t === "btn" && /^https?:\/\/(www\.)?yucatanlove\.com/i.test(b.href || "")), "Enlaza a otra página de yucatanlove.com"],
+    [fotos.length === 0 || /captured by|photo credits?|photos? by|fotograf/i.test(body), "Lleva el crédito de las fotos (en el sitio: “A vision of YUC'ATÅLOVE ®, captured by …”)"],
   ];
   $("seo-chk").innerHTML = checks.map(([ok, t]) => `<li class="${ok ? "ok" : ""}">${ok ? "✓" : "○"} ${esc(t)}</li>`).join("") + `<li class="info">⏱ ${minLectura(body)} min de lectura · ${pals} palabras</li>`;
+  seoAyudas(s);
 }
+// Debajo de Categoría: en qué parte del sitio queda (o aviso si no existe). Debajo de Etiquetas: las que ya existen, para elegirlas con un clic.
+function seoAyudas(s){
+  const c = catDe(s.cat), a = $("seo-cat-a"), ruta = c ? catRuta(c) : "";
+  a.textContent = !s.cat ? "Elige una de la lista: son las categorías que existen en el sitio (una por artículo)." : c ? "En el sitio: " + (ruta ? ruta + " › " : "") + c[1] : "No está entre las categorías del sitio. Si es nueva, primero hay que crearla en WordPress.";
+  a.classList.toggle("mal", !!s.cat && !c);
+  const puestas = String(s.tags || "").split(",").map(wpNorma).filter(Boolean);
+  $("seo-tags-sug").innerHTML = "<span>Ya existen en el sitio:</span>" + WP_TAGS.map(t => `<button type="button" data-tag="${esc(t)}" class="${puestas.includes(wpNorma(t)) ? "on" : ""}">${esc(t)}</button>`).join("");
+}
+$("seo-cats").innerHTML = WP_CATS.filter((c, i) => WP_CATS.findIndex(x => wpNorma(x[1]) === wpNorma(c[1])) === i).map(c => `<option value="${esc(c[1])}">${esc(catRuta(c))}</option>`).join("");
+$("seo-autores").innerHTML = WP_AUTORES.map(a => `<option value="${esc(a)}"></option>`).join("");
+$("seo-tags-sug").addEventListener("click", e => {
+  const b = e.target.closest("button[data-tag]"); if (!b) return;
+  const i = $("seo-tags"), l = i.value.split(",").map(x => x.trim()).filter(Boolean), k = l.findIndex(x => wpNorma(x) === wpNorma(b.dataset.tag));
+  if (k >= 0) l.splice(k, 1); else l.push(b.dataset.tag);
+  i.value = l.join(", "); i.dispatchEvent(new Event("input", { bubbles: true }));
+});
 ["e-tipo"].forEach(id => $(id).addEventListener("change", () => { seoToggle(); seoPintar(); }));
 ["e-copy","e-caption", ...Object.values(SEO_K)].forEach(id => $(id).addEventListener("input", () => { seoPintar(); pintarPrevBlog(); }));
 ["e-tipo","e-fecha"].forEach(id => $(id).addEventListener("change", pintarPrevBlog));
