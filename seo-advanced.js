@@ -45,8 +45,34 @@ for(let i=1;i<=4;i++){const row=el("div",null,"adv-row");g.append(row);field(row
 field(g,"cornerstone","Contenido pilar","checkbox");const result=el("div",null,"adv-status");g.append(result);
 const read=group("Legibilidad e insights");const readout=el("div");read.append(readout);
 const linking=group("Enlazado interno y contenido relacionado");const links=el("div");linking.append(links);
+const audit=group("Auditoría de contenido publicado");
+const auditButton=el("button","Consultar WordPress","btn ghost small");auditButton.type="button";
+const auditOut=el("div",null,"adv-status");audit.append(auditButton,auditOut);
+let auditData=null,auditBusy=false;
+function renderAudit(){
+ if(!auditData)return;
+ const d=input(),r=auditData,items=r.articulos||[],cov=r.cobertura||{};
+ auditOut.replaceChildren();
+ auditOut.append(el("p","Lectura de "+items.length+" entradas/páginas · "+new Date(r.fecha).toLocaleString("es-MX"),"adv-note"));
+ for(const [k,v] of Object.entries(cov))auditOut.append(el("p",k+": "+v.leidos+"/"+(v.total??"?")+(v.completa?" · completo":" · parcial"),"adv-note"));
+ auditOut.append(el("p","Los enlaces se cuentan entre artículos y páginas consultados, sin menús, widgets, otros tipos de contenido ni JavaScript. No es una auditoría de rastreo completa.","adv-note"));
+ const termSet=new Set(tokens(d.title+" "+d.phrases.map(p=>p.term).join(" ")).filter(w=>w.length>3));
+ const relevant=items.filter(p=>p.url&&p.slug!==d.slug).map(p=>({...p,score:[...new Set(tokens(p.titulo+" "+p.slug))].filter(t=>termSet.has(t)).length})).filter(p=>p.score>0).sort((a,b)=>b.score-a.score).slice(0,8);
+ auditOut.append(el("strong","Enlaces internos recomendados (publicados)"));
+ for(const p of relevant){const row=el("div",null,"adv-row"),a=el("a",p.titulo);const u=safeUrl(p.url);if(!u)continue;a.href=u;a.target="_blank";a.rel="noopener noreferrer";row.append(a);const c=el("button","Copiar enlace","btn ghost small");c.type="button";c.onclick=async()=>{c.textContent=await copiarTexto(u)?"Copiado":"No se pudo";};row.append(c);auditOut.append(row);}
+ if(!relevant.length)auditOut.append(el("p","No hay coincidencias suficientes."));
+ const orphan=items.filter(p=>p.entrantes===0);auditOut.append(el("strong","Sin enlaces entrantes detectados: "+orphan.length));
+ list(auditOut,orphan.slice(0,15).map(p=>p.titulo||p.slug));
+ const thisPost=items.find(p=>p.slug===d.slug);if(thisPost)auditOut.append(el("p","Artículo actual: "+thisPost.entrantes+" fuentes entrantes y "+thisPost.salientes+" destinos internos en la muestra."));
+}
+auditButton.onclick=async()=>{
+ if(auditBusy)return;auditBusy=true;auditButton.disabled=true;auditOut.textContent="Consultando contenido publicado…";
+ try{const {data,error}=await sb.functions.invoke("wp",{body:{accion:"auditoria_seo"}});if(error||!data?.ok||!Array.isArray(data.articulos))throw Error(data?.error||"Auditoría no disponible. Verifica los permisos de administrador y el despliegue de la función wp.");auditData=data;renderAudit();}
+ catch(e){auditData=null;auditOut.textContent=e.message||"No disponible";}
+ finally{auditBusy=false;auditButton.disabled=false;}
+};
 const social=group("Vista previa social · Facebook / X");field(social,"socialTitle","Título social");field(social,"socialDescription","Descripción social","textarea");field(social,"socialImage","URL de imagen social");const preview=el("div",null,"adv-social");social.append(preview);
-const tech=group("Configuración editorial y técnica");field(tech,"canonical","URL canónica");field(tech,"noindex","Solicitar noindex","checkbox");field(tech,"oldSlug","Slug anterior (propuesta de redirección)");field(tech,"schema","Tipo de Schema (Article / BlogPosting / NewsArticle)");const technical=el("div",null,"adv-note");tech.append(technical);
+const tech=group("Configuración editorial y técnica");field(tech,"canonical","URL canónica");field(tech,"applyMeta","Enviar ajustes SEO avanzados a WordPress (solo borradores)","checkbox");field(tech,"noindex","Solicitar noindex","checkbox");field(tech,"oldSlug","Slug anterior (propuesta de redirección)");field(tech,"schema","Tipo de Schema (Article / BlogPosting / NewsArticle)");const technical=el("div",null,"adv-note");tech.append(technical);
 const ai=group("Asistencia editorial");const aiOut=el("div",null,"adv-status");const actions=[["meta","Generar metadatos"],["optimize","Proponer mejoras SEO"],["summary","Resumir artículo"],["plan","Planificar contenido"],["inclusive","Revisar lenguaje inclusivo"],["alt","Sugerir textos alternativos"]];
 const btns=el("div");ai.append(btns,aiOut);
 const split=s=>String(s||"").split(",").map(x=>x.trim()).filter(Boolean).slice(0,12);
@@ -72,11 +98,11 @@ function render(){
  const slug=d.slug; if(slug){const incoming=local.filter(p=>JSON.stringify(p.cuerpo||[]).includes("/"+slug+"/")).length;links.append(el("p","Enlaces entrantes detectados en borradores locales: "+incoming+" (no equivale a auditoría del sitio publicado).","adv-note"));}
  preview.replaceChildren();const url=safeUrl(value("socialImage"));if(url){const im=el("img");im.src=url;im.alt="Vista previa social";im.referrerPolicy="no-referrer";preview.append(im);}
  preview.append(el("small","Facebook · YUCATANLOVE.COM · vista aproximada"),el("strong",value("socialTitle")||d.title),el("p",value("socialDescription")||d.description),el("hr"),el("small","X · tarjeta aproximada"),el("strong",value("socialTitle")||d.title),el("p",value("socialDescription")||d.description));
- technical.textContent=(value("canonical")&&!safeUrl(value("canonical"))?"URL canónica inválida. ":"")+(value("oldSlug")&&value("oldSlug")!==d.slug?"Redirección propuesta: "+value("oldSlug")+" → "+d.slug+". ":"")+"Estos ajustes se guardan en el borrador; requieren integración WordPress para aplicarse.";
+ technical.textContent=(value("canonical")&&!safeUrl(value("canonical"))?"URL canónica inválida. ":"")+(value("oldSlug")&&value("oldSlug")!==d.slug?"Redirección propuesta: "+value("oldSlug")+" → "+d.slug+". ":"")+"Los campos avanzados compatibles solo se intentan enviar si autorizas el envío y la entrada está en borrador. Schema y redirecciones siguen siendo propuestas. El ajuste noindex nunca se aplica a una entrada publicada.";
 }
 const originalRead=seoLeer,originalLoad=seoCargar,originalRender=seoPintar;
 seoLeer=function(){const s=originalRead();if($("e-tipo").value==="Blog")s.advanced=snapshot();return s;};
-seoCargar=function(p){restore(p?.seo?.advanced||{});originalLoad(p);render();};
+seoCargar=function(p){restore(p?.seo?.advanced||{});originalLoad(p);render();if(auditData)renderAudit();};
 seoPintar=function(){originalRender();render();};
 panel.addEventListener("input",()=>{editorDirty=true;render();});
 for(const [action,label] of actions){const b=el("button",label,"btn ghost small");b.type="button";btns.append(b);b.onclick=async()=>{
