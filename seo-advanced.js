@@ -72,13 +72,27 @@ auditButton.onclick=async()=>{
  finally{auditBusy=false;auditButton.disabled=false;}
 };
 const social=group("Vista previa social · Facebook / X");field(social,"socialTitle","Título social");field(social,"socialDescription","Descripción social","textarea");field(social,"socialImage","URL de imagen social");const preview=el("div",null,"adv-social");social.append(preview);
-const tech=group("Configuración editorial y técnica");field(tech,"canonical","URL canónica");field(tech,"applyMeta","Enviar ajustes SEO avanzados a WordPress (solo borradores)","checkbox");field(tech,"noindex","Solicitar noindex","checkbox");field(tech,"oldSlug","Slug anterior (propuesta de redirección)");field(tech,"schema","Tipo de Schema (Article / BlogPosting / NewsArticle)");const technical=el("div",null,"adv-note");tech.append(technical);
+const tech=group("Configuración editorial y técnica");field(tech,"canonical","URL canónica");field(tech,"applyMeta","Enviar ajustes SEO avanzados a WordPress (solo borradores)","checkbox");field(tech,"noindex","Solicitar noindex (desmarcar no elimina una orden previa)","checkbox");field(tech,"oldSlug","Slug anterior (propuesta de redirección)");field(tech,"schema","Tipo de Schema (Article / BlogPosting / NewsArticle)");const technical=el("div",null,"adv-note");tech.append(technical);
+const history=group("Historial de experimentos SEO");
+const histOut=el("div",null,"adv-status");const histBtn=el("button","Registrar versión de análisis","btn ghost small");histBtn.type="button";
+const histNote=el("input");histNote.placeholder="Hipótesis o cambio realizado (opcional)";histNote.maxLength=240;history.append(histNote,histBtn,histOut);
+let experiments=[];
+function renderHistory(){
+ histOut.replaceChildren();
+ histOut.append(el("p","Registra una versión antes y después de un cambio. Guarda el artículo para conservar el historial. Los indicadores son editoriales, no rankings ni conversiones.","adv-note"));
+ for(const x of experiments.slice().reverse()){
+  const row=el("div",null,"adv-group");
+  row.append(el("strong",new Date(x.at).toLocaleString("es-MX")),el("p",x.note||"Sin hipótesis registrada"),el("p",x.words+" palabras · Flesch "+(x.flesch??"—")+" · "+x.matched+"/"+x.checks+" verificaciones de frases"));
+  histOut.append(row);
+ }
+}
+histBtn.onclick=()=>{const d=input(),a=analyze(d);if(!a.words){histOut.textContent="Escribe contenido antes de registrar un experimento.";return;}experiments=[...experiments,{at:new Date().toISOString(),note:histNote.value.trim(),words:a.words,flesch:a.flesch,matched:a.phrases.reduce((n,p)=>n+p.checks.filter(c=>c[1]).length,0),checks:a.phrases.reduce((n,p)=>n+p.checks.length,0)}].slice(-20);histNote.value="";editorDirty=true;renderHistory();};
 const ai=group("Asistencia editorial");const aiOut=el("div",null,"adv-status");const actions=[["meta","Generar metadatos"],["optimize","Proponer mejoras SEO"],["summary","Resumir artículo"],["plan","Planificar contenido"],["inclusive","Revisar lenguaje inclusivo"],["alt","Sugerir textos alternativos"]];
 const btns=el("div");ai.append(btns,aiOut);
 const split=s=>String(s||"").split(",").map(x=>x.trim()).filter(Boolean).slice(0,12);
 const value=k=>fields[k].type==="checkbox"?fields[k].checked:fields[k].value.trim();
-function snapshot(){const o={};Object.keys(fields).forEach(k=>o[k]=value(k));return o;}
-function restore(o){for(const [k,n] of Object.entries(fields)){if(n.type==="checkbox")n.checked=!!o?.[k];else n.value=o?.[k]??(k==="lang"?"en":"");}aiOut.replaceChildren();}
+function snapshot(){const o={};Object.keys(fields).forEach(k=>o[k]=value(k));o.experiments=experiments.slice(-20);return o;}
+function restore(o){for(const [k,n] of Object.entries(fields)){if(n.type==="checkbox")n.checked=!!o?.[k];else n.value=o?.[k]??(k==="lang"?"en":"");}aiOut.replaceChildren();experiments=Array.isArray(o?.experiments)?o.experiments.filter(x=>x&&typeof x.at==="string").slice(-20):[];histNote.value="";renderHistory();}
 function input(){const b=esBlogEd()?blLeer(blDoc):[],s=originalRead(),body=esBlogEd()?blTexto(b):"";return {body,title:s.titulo||$("e-copy").value,description:s.desc||"",slug:s.slug||"",headings:b.filter(x=>x.t==="h").map(x=>blPlano(x.x)),paragraphs:b.filter(x=>x.t==="p").map(x=>blPlano(x.x)),images:[s.alt||"",...b.filter(x=>x.t==="img").flatMap(x=>(x.imgs||[]).map(f=>f.alt||""))],phrases:[{term:s.kw||"",synonyms:split(value("syn0"))},...Array.from({length:4},(_,i)=>({term:value("kw"+(i+1)),synonyms:split(value("syn"+(i+1)))}))],lang:value("lang"),cornerstone:value("cornerstone")};}
 function list(parent,items){const ul=el("ul");items.forEach(x=>ul.append(el("li",x)));parent.append(ul);}
 function safeUrl(s){try{const u=new URL(s);return /^https?:$/.test(u.protocol)?u.href:null;}catch{return null;}}
