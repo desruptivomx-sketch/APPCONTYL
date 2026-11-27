@@ -449,7 +449,9 @@ function tomadoBolita(p, grande){
   return `<span class="bolita${grande ? " g" : ""}" style="background:${c};color:${textOn(c)}" title="${esc(t)}" aria-label="${esc(t)}">${esc(iniciales(n))}</span>`;
 }
 function pintarTomado(){ const p = current; $("e-tomado").innerHTML = p && tomadoBolita(p) ? `${tomadoBolita(p)}<span>Lo tomó ${esc(nombreDe(p.tomado_por))}</span>` : ""; }
+const publicacionDisponible = p => !!p && Object.prototype.hasOwnProperty.call(p,"publicacion");
 function cellHtml(p, c){
+  if (c.k === "publicacion" && !publicacionDisponible(p)) return '<span class="note" title="Pendiente de activar el campo en Supabase">Pendiente de activar</span>';
   const v = p[c.k];
   if (c.type === "date") return `<div class="f-cell"><span class="mover" data-mover title="Mantén presionado y arrastra para cambiar el orden" aria-hidden="true">⠿</span><input type="date" data-k="fecha" value="${esc(v || "")}" aria-label="Fecha"></div>`;
   if (c.type === "list") {
@@ -611,6 +613,7 @@ async function savePatch(id, patch, rerender){
   if (rerender || "status" in patch) renderBody();
 }
 function editLong(p, k){
+  if (k === "publicacion" && !publicacionDisponible(p)) { saved("Publicación todavía no está habilitada en la base de datos.", true); return; }
   const c = COLS.find(x => x.k === k), d = $("dlg");
   $("dlg-title").textContent = `${c.label}${p.fecha ? " · " + fmtCorto(p.fecha) : ""}`;
   $("dlg-text").value = p[k] || "";
@@ -1696,6 +1699,8 @@ function openEditor(p){
   $("e-title").textContent = p.fecha ? `Post del ${fmtCorto(p.fecha)}` : "Post nuevo";
   ["dia","semana","mes","tipo","pilar","status","cumplio"].forEach(k => { $("e-"+k).innerHTML = optionsHtml(k === "dia" ? "dia" : k === "mes" ? "mes" : k, p[k], true); $("e-"+k).value = p[k] || ""; });
   ["fecha","publicacion","copy","caption","inspo","contenido"].forEach(k => { $("e-"+k).value = p[k] || ""; });
+  $("e-publicacion").disabled = !publicacionDisponible(p);
+  $("e-publicacion").placeholder = publicacionDisponible(p) ? "Enlace o referencia de la publicación final" : "Pendiente de activar en Supabase";
   LINK_FIELDS.forEach(k => { $("e-"+k+"-links").innerHTML = chipsLinks(p[k]); });
   pvIdx = 0; renderPreview(); renderSlides(); $("e-rmimg").classList.toggle("hidden", !p.imagen_path); emsg("");
   cargarHistorial(); iaLimpiar(); blCargar(p); seoCargar(p); pintarTomado(); pintarPrevBlog(); wpPintar();
@@ -1752,7 +1757,7 @@ $("e-save").addEventListener("click", async () => {
   const btn = $("e-save"); btn.disabled = true;
   try {
     const patch = {};
-    E_FIELDS.forEach(k => { const v = $("e-"+k).value; patch[k] = (k === "copy" ? v.trim() : v) || null; });
+    E_FIELDS.forEach(k => { if (k === "publicacion" && !publicacionDisponible(current)) return; const v = $("e-"+k).value; patch[k] = (k === "copy" ? v.trim() : v) || null; });
     const fotosAntes = blImgs(current.cuerpo);
     if (patch.tipo === "Blog") { if (blSubiendo) throw new Error("Espera a que terminen de subir las imágenes del artículo."); patch.cuerpo = blLeer(blDoc); patch.caption = blTexto(patch.cuerpo) || null; }
     const seo = seoLeer(); if (patch.tipo === "Blog" || Object.values(seo).some(Boolean)) patch.seo = seo;
