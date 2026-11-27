@@ -59,7 +59,13 @@ const STATIC = {
   cumplio: [{valor:"✔", color:"#674E4A"}, {valor:"✖", color:"#AB391B"}]
 };
 let opciones = { tipo:[], pilar:[], status:[], semana:[] };
-const lista = name => STATIC[name] || opciones[name] || [];
+const lista = name => {
+  const items = STATIC[name] || opciones[name] || [];
+  if (name !== "status" || items.some(o => String(o.valor || "").trim().toLowerCase() === "terminado")) return items;
+  const out = items.slice(), i = out.findIndex(o => o.valor === "Publicado");
+  out.splice(i < 0 ? out.length : i, 0, {lista:"status",valor:"Terminado",color:"#95827E"});
+  return out;
+};
 const colorDe = (name, v) => (lista(name).find(o => o.valor === v) || {}).color || null;
 function textOn(hex){ if(!hex) return "#303030"; const n=parseInt(hex.slice(1),16); const r=n>>16,g=(n>>8)&255,b=n&255; return (0.299*r+0.587*g+0.114*b) > 150 ? "#303030" : "#FAF4EE"; }
 const chip = (name, v) => { if (!v) return ""; const c = colorDe(name, v) || "#F6F6F4"; return `<span class="chip" style="background:${c};color:${textOn(c)}">${esc(v)}</span>`; };
