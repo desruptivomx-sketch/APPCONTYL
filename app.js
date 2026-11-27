@@ -413,8 +413,8 @@ function pass(p){
   const hoy = new Date().toISOString().slice(0,10);
   for (const [k, v] of Object.entries(filters)) {
     if (!v) continue;
-    if (k === "__q") { const q = v.toLowerCase(); if (!["publicacion","copy","caption","inspo","contenido","pilar","tipo"].some(f => String(p[f] || "").toLowerCase().includes(q)) && !textoComentarios(p.id).toLowerCase().includes(q)) return false; continue; }
-    const val = k === "comentarios" ? textoComentarios(p.id) : p[k];
+    if (k === "__q") { const q = v.toLowerCase(); if (!["publicacion","copy","caption","inspo","contenido","pilar","tipo"].some(f => String(f === "publicacion" ? publicacionDe(p) : p[f] || "").toLowerCase().includes(q)) && !textoComentarios(p.id).toLowerCase().includes(q)) return false; continue; }
+    const val = k === "comentarios" ? textoComentarios(p.id) : k === "publicacion" ? publicacionDe(p) : p[k];
     if (v === "__vacio") { if (val) return false; continue; }
     if (k === "fecha") { if (v === "__futuro" && !(val && val >= hoy)) return false; if (v === "__pasado" && !(val && val < hoy)) return false; continue; }
     if (k === "imagen_path") { if (v === "__con" && !val) return false; continue; }
@@ -428,7 +428,7 @@ function sortedRows(){
   const rows = posts.filter(pass);
   const k = sortKey;
   rows.sort((a, b) => {
-    let x = a[k] ?? "", y = b[k] ?? "";
+    let x = k === "publicacion" ? publicacionDe(a) : a[k] ?? "", y = k === "publicacion" ? publicacionDe(b) : b[k] ?? "";
     if (k === "comentarios") { x = ultimoComentario(a.id); y = ultimoComentario(b.id); }
     if (k === "mes") { x = MESES.indexOf(x); y = MESES.indexOf(y); }
     if (k === "dia") { x = DIAS.indexOf(x); y = DIAS.indexOf(y); }
@@ -449,10 +449,11 @@ function tomadoBolita(p, grande){
   return `<span class="bolita${grande ? " g" : ""}" style="background:${c};color:${textOn(c)}" title="${esc(t)}" aria-label="${esc(t)}">${esc(iniciales(n))}</span>`;
 }
 function pintarTomado(){ const p = current; $("e-tomado").innerHTML = p && tomadoBolita(p) ? `${tomadoBolita(p)}<span>Lo tomó ${esc(nombreDe(p.tomado_por))}</span>` : ""; }
-const publicacionDisponible = p => !!p && Object.prototype.hasOwnProperty.call(p,"publicacion");
+// Compatibilidad con la base actual: cuando no existe la columna, conservar la idea en el JSON seo ya disponible.
+const publicacionDe = p => typeof p?.seo?.publicacion === "string" ? p.seo.publicacion : String(p?.publicacion ?? "");
+const publicacionEnJson = p => typeof p?.seo?.publicacion === "string" || !Object.prototype.hasOwnProperty.call(p || {}, "publicacion");
 function cellHtml(p, c){
-  if (c.k === "publicacion" && !publicacionDisponible(p)) return '<span class="note" title="Pendiente de activar el campo en Supabase">Pendiente de activar</span>';
-  const v = p[c.k];
+  const v = c.k === "publicacion" ? publicacionDe(p) : p[c.k];
   if (c.type === "date") return `<div class="f-cell"><span class="mover" data-mover title="Mantén presionado y arrastra para cambiar el orden" aria-hidden="true">⠿</span><input type="date" data-k="fecha" value="${esc(v || "")}" aria-label="Fecha"></div>`;
   if (c.type === "list") {
     const col = colorDe(c.list, v);
@@ -573,7 +574,7 @@ function renderBody(){
         <span class="pthumb${u ? " has" : ""}" style="${u ? `background-image:url('${esc(u)}')` : ""}">${u ? "" : "＋"}</span>
         <span class="pbody">
           <span class="pdate">${esc(p.dia ? p.dia + " · " : "")}${fmtCorto(p.fecha)}${p.semana ? " · " + esc(p.semana) : ""}</span>
-          ${p.publicacion ? `<span class="pdate">Publicación: ${esc(p.publicacion)}</span>` : ""}
+          ${publicacionDe(p) ? `<span class="pdate">Publicación: ${esc(publicacionDe(p))}</span>` : ""}
           <span class="pcopy${p.copy ? "" : " empty"}">${esc(p.copy || "Sin copy")}</span>
           ${(linksDe(p.contenido).length || linksDe(p.inspo).length) ? `<span class="lnks">${chipsLinks(p.contenido)}${chipsLinks(p.inspo)}</span>` : ""}
           ${comentTarjeta(p)}
@@ -612,12 +613,26 @@ async function savePatch(id, patch, rerender){
   if (error) saved(errMsg(error), true); else { saved("Guardado"); const r = Array.isArray(data) ? data[0] : data; if (p && r) Object.assign(p, r); }
   if (rerender || "status" in patch) renderBody();
 }
+async function guardarPublicacion(id, valor){
+  saved("Guardando…");
+  try {
+    const {data:f,error:e} = await sb.from("posts").select("*").eq("id",id).single();
+    if(e || !f) throw e || new Error("No se encontró el post.");
+    const patch = publicacionEnJson(f) ? {seo:{...(f.seo || {}),publicacion:valor}} : {publicacion:valor || null};
+    let q=sb.from("posts").update(patch).eq("id",id);
+    if("seo" in patch) q=f.seo==null?q.is("seo",null):q.eq("seo",JSON.stringify(f.seo));
+    const {data:row,error}=await q.select("*").single();
+    if(error || !row)throw error || new Error("El post cambió. Vuelve a abrirlo e intenta otra vez.");
+    const p=posts.find(x=>x.id===id);if(p)Object.assign(p,row);
+    saved("Guardado");renderAll();
+  }catch(e){saved(errMsg(e),true);}
+}
 function editLong(p, k){
-  if (k === "publicacion" && !publicacionDisponible(p)) { saved("Publicación todavía no está habilitada en la base de datos.", true); return; }
   const c = COLS.find(x => x.k === k), d = $("dlg");
   $("dlg-title").textContent = `${c.label}${p.fecha ? " · " + fmtCorto(p.fecha) : ""}`;
-  $("dlg-text").value = p[k] || "";
-  d.onclose = () => { if (d.returnValue === "ok") { const v = $("dlg-text").value; if (v !== (p[k] || "")) savePatch(p.id, { [k]: v || null }, true); } };
+  const inicial = k === "publicacion" ? publicacionDe(p) : p[k] || "";
+  $("dlg-text").value = inicial;
+  d.onclose = () => { if (d.returnValue === "ok") { const v = $("dlg-text").value; if (v !== inicial) { if (k === "publicacion") guardarPublicacion(p.id, v); else savePatch(p.id, { [k]: v || null }, true); } } };
   d.returnValue = ""; d.showModal(); $("dlg-text").focus();
 }
 function confirmDelete(p){
@@ -1698,9 +1713,10 @@ function openEditor(p){
   current = p; pendingFile = null; editorDirty = false; if (pendingUrl) { URL.revokeObjectURL(pendingUrl); pendingUrl = null; }
   $("e-title").textContent = p.fecha ? `Post del ${fmtCorto(p.fecha)}` : "Post nuevo";
   ["dia","semana","mes","tipo","pilar","status","cumplio"].forEach(k => { $("e-"+k).innerHTML = optionsHtml(k === "dia" ? "dia" : k === "mes" ? "mes" : k, p[k], true); $("e-"+k).value = p[k] || ""; });
-  ["fecha","publicacion","copy","caption","inspo","contenido"].forEach(k => { $("e-"+k).value = p[k] || ""; });
-  $("e-publicacion").disabled = !publicacionDisponible(p);
-  $("e-publicacion").placeholder = publicacionDisponible(p) ? "Enlace o referencia de la publicación final" : "Pendiente de activar en Supabase";
+  ["fecha","copy","caption","inspo","contenido"].forEach(k => { $("e-"+k).value = p[k] || ""; });
+  $("e-publicacion").value = publicacionDe(p);
+  $("e-publicacion").disabled = false;
+  $("e-publicacion").placeholder = "Resume la idea de la publicación en una o dos frases";
   LINK_FIELDS.forEach(k => { $("e-"+k+"-links").innerHTML = chipsLinks(p[k]); });
   pvIdx = 0; renderPreview(); renderSlides(); $("e-rmimg").classList.toggle("hidden", !p.imagen_path); emsg("");
   cargarHistorial(); iaLimpiar(); blCargar(p); seoCargar(p); pintarTomado(); pintarPrevBlog(); wpPintar();
@@ -1757,14 +1773,26 @@ $("e-save").addEventListener("click", async () => {
   const btn = $("e-save"); btn.disabled = true;
   try {
     const patch = {};
-    E_FIELDS.forEach(k => { if (k === "publicacion" && !publicacionDisponible(current)) return; const v = $("e-"+k).value; patch[k] = (k === "copy" ? v.trim() : v) || null; });
+    E_FIELDS.forEach(k => { if (k === "publicacion") return; const v = $("e-"+k).value; patch[k] = (k === "copy" ? v.trim() : v) || null; });
     const fotosAntes = blImgs(current.cuerpo);
     if (patch.tipo === "Blog") { if (blSubiendo) throw new Error("Espera a que terminen de subir las imágenes del artículo."); patch.cuerpo = blLeer(blDoc); patch.caption = blTexto(patch.cuerpo) || null; }
-    const seo = seoLeer(); if (patch.tipo === "Blog" || Object.values(seo).some(Boolean)) patch.seo = seo;
+    const {data:ultimo,error:errUltimo}=await sb.from("posts").select("*").eq("id",current.id).single();
+    if(errUltimo || !ultimo)throw errUltimo || new Error("No se encontró el post.");
+    const seo = seoLeer(), seoAnterior={...(ultimo.seo || {})}, idea=$("e-publicacion").value;
+    if(patch.tipo==="Blog" || Object.values(seo).some(Boolean)){
+      for(const k of [...Object.keys(SEO_K),"catId"])delete seoAnterior[k];
+      Object.assign(seoAnterior,seo);
+      patch.seo=seoAnterior;
+    }
+    if(publicacionEnJson(ultimo)){
+      if(idea!==publicacionDe(ultimo))patch.seo={...seoAnterior,publicacion:idea};
+    }else if(idea!==publicacionDe(ultimo))patch.publicacion=idea||null;
     const old = current.imagen_path;
     if (pendingFile) patch.imagen_path = await uploadImage(pendingFile, current.id);
     emsg("Guardando…");
-    const { data: fila, error } = await sb.from("posts").update(patch).eq("id", current.id).select("tomado_por,tomado_at");
+    let guardar=sb.from("posts").update(patch).eq("id", current.id);
+    if("seo" in patch) guardar=ultimo.seo==null?guardar.is("seo",null):guardar.eq("seo",JSON.stringify(ultimo.seo));
+    const { data: fila, error } = await guardar.select("tomado_por,tomado_at").single();
     if (error) throw error;
     const fr = Array.isArray(fila) ? fila[0] : fila; if (fr) Object.assign(patch, fr);
     if (patch.imagen_path) { await signedUrls(allImagePaths([{ imagen_path: patch.imagen_path }])); if (old) sb.storage.from(CFG.bucket).remove([old, thumbOf(old)]); }
@@ -2252,7 +2280,7 @@ async function exportarPDF(){
       ${p.caption ? `<div class="lbl">Caption</div><div class="txt">${esc(p.caption)}</div>` : ""}
       ${nComent(p.id) ? `<div class="lbl">Comentarios</div><div class="txt">${comentariosDe(p.id).map(c => `<b>${esc(nombreDe(c.autor))}</b> (${esc(new Date(c.created_at).toLocaleDateString("es-MX", { day: "numeric", month: "short" }))}): ${esc(c.texto)}`).join("\n")}</div>` : ""}
       ${p.inspo ? `<div class="lbl">Inspo / Referencia</div><div class="txt">${linkify(p.inspo)}</div>` : ""}
-      ${p.publicacion ? `<div class="lbl">Publicación</div><div class="txt">${linkify(p.publicacion)}</div>` : ""}
+      ${publicacionDe(p) ? `<div class="lbl">Publicación</div><div class="txt">${linkify(publicacionDe(p))}</div>` : ""}
       ${p.contenido ? `<div class="lbl">Contenido</div><div class="txt">${linkify(p.contenido)}</div>` : ""}
     </div></article>`; }).join("") || "<p>No hay publicaciones con fecha en este mes.</p>"}</section>`;
     const area = $("print-area"); area.innerHTML = h;
