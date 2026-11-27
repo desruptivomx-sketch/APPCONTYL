@@ -73,6 +73,7 @@ const COLS = [
   {k:"pilar", label:"Pilar / Categoría", type:"list", list:"pilar", w:190},
   {k:"status", label:"Status", type:"list", list:"status", w:140},
   {k:"imagen_path", label:"Imagen", type:"thumb", w:64},
+  {k:"publicacion", label:"Publicación", type:"long", w:220},
   {k:"copy", label:"Copy", type:"long", w:220},
   {k:"caption", label:"Caption", type:"long", w:340},
   {k:"inspo", label:"Inspo / Referencia", type:"long", w:220},
@@ -412,7 +413,7 @@ function pass(p){
   const hoy = new Date().toISOString().slice(0,10);
   for (const [k, v] of Object.entries(filters)) {
     if (!v) continue;
-    if (k === "__q") { const q = v.toLowerCase(); if (!["copy","caption","inspo","contenido","pilar","tipo"].some(f => String(p[f] || "").toLowerCase().includes(q)) && !textoComentarios(p.id).toLowerCase().includes(q)) return false; continue; }
+    if (k === "__q") { const q = v.toLowerCase(); if (!["publicacion","copy","caption","inspo","contenido","pilar","tipo"].some(f => String(p[f] || "").toLowerCase().includes(q)) && !textoComentarios(p.id).toLowerCase().includes(q)) return false; continue; }
     const val = k === "comentarios" ? textoComentarios(p.id) : p[k];
     if (v === "__vacio") { if (val) return false; continue; }
     if (k === "fecha") { if (v === "__futuro" && !(val && val >= hoy)) return false; if (v === "__pasado" && !(val && val < hoy)) return false; continue; }
@@ -570,6 +571,7 @@ function renderBody(){
         <span class="pthumb${u ? " has" : ""}" style="${u ? `background-image:url('${esc(u)}')` : ""}">${u ? "" : "＋"}</span>
         <span class="pbody">
           <span class="pdate">${esc(p.dia ? p.dia + " · " : "")}${fmtCorto(p.fecha)}${p.semana ? " · " + esc(p.semana) : ""}</span>
+          ${p.publicacion ? `<span class="pdate">Publicación: ${esc(p.publicacion)}</span>` : ""}
           <span class="pcopy${p.copy ? "" : " empty"}">${esc(p.copy || "Sin copy")}</span>
           ${(linksDe(p.contenido).length || linksDe(p.inspo).length) ? `<span class="lnks">${chipsLinks(p.contenido)}${chipsLinks(p.inspo)}</span>` : ""}
           ${comentTarjeta(p)}
@@ -1685,7 +1687,7 @@ async function nuevoDesdeFeed(tipo){
 
 
 /* ---------- Editor de post ---------- */
-const E_FIELDS = ["fecha","dia","semana","mes","tipo","pilar","status","cumplio","copy","caption","inspo","contenido"];   // los comentarios van aparte, firmados
+const E_FIELDS = ["fecha","dia","semana","mes","tipo","pilar","status","cumplio","publicacion","copy","caption","inspo","contenido"];   // los comentarios van aparte, firmados
 let editorDirty = false;
 function emsg(t, warn){ const m = $("e-msg"); m.textContent = t || ""; m.classList.toggle("warn", !!warn); }
 function setPreview(src){ $("e-preview").innerHTML = src ? `<img src="${esc(src)}" alt="Imagen del post">` : "Subir imagen o portada<br><span class='note'>Vertical 4:5 se ve mejor</span>"; }
@@ -1693,7 +1695,7 @@ function openEditor(p){
   current = p; pendingFile = null; editorDirty = false; if (pendingUrl) { URL.revokeObjectURL(pendingUrl); pendingUrl = null; }
   $("e-title").textContent = p.fecha ? `Post del ${fmtCorto(p.fecha)}` : "Post nuevo";
   ["dia","semana","mes","tipo","pilar","status","cumplio"].forEach(k => { $("e-"+k).innerHTML = optionsHtml(k === "dia" ? "dia" : k === "mes" ? "mes" : k, p[k], true); $("e-"+k).value = p[k] || ""; });
-  ["fecha","copy","caption","inspo","contenido"].forEach(k => { $("e-"+k).value = p[k] || ""; });
+  ["fecha","publicacion","copy","caption","inspo","contenido"].forEach(k => { $("e-"+k).value = p[k] || ""; });
   LINK_FIELDS.forEach(k => { $("e-"+k+"-links").innerHTML = chipsLinks(p[k]); });
   pvIdx = 0; renderPreview(); renderSlides(); $("e-rmimg").classList.toggle("hidden", !p.imagen_path); emsg("");
   cargarHistorial(); iaLimpiar(); blCargar(p); seoCargar(p); pintarTomado(); pintarPrevBlog(); wpPintar();
@@ -1985,8 +1987,8 @@ $("ia").addEventListener("click", async e => {
 });
 
 /* ---------- Historial de cambios ---------- */
-const H_LABEL = { fecha:"Fecha", dia:"Día", semana:"Semana", mes:"Mes", tipo:"Tipo", pilar:"Pilar", status:"Status", cumplio:"¿Cumplió?", copy:"Copy", caption:"Caption", inspo:"Inspo", comentarios:"Comentarios", contenido:"Contenido" };
-const H_LARGOS = ["copy","caption","inspo","comentarios","contenido"];
+const H_LABEL = { fecha:"Fecha", dia:"Día", semana:"Semana", mes:"Mes", tipo:"Tipo", pilar:"Pilar", status:"Status", cumplio:"¿Cumplió?", publicacion:"Publicación", copy:"Copy", caption:"Caption", inspo:"Inspo", comentarios:"Comentarios", contenido:"Contenido" };
+const H_LARGOS = ["publicacion","copy","caption","inspo","comentarios","contenido"];
 let histPost = null;
 async function cargarHistorial(){
   if (!current) return; const id = current.id; histPost = id;
@@ -2245,6 +2247,7 @@ async function exportarPDF(){
       ${p.caption ? `<div class="lbl">Caption</div><div class="txt">${esc(p.caption)}</div>` : ""}
       ${nComent(p.id) ? `<div class="lbl">Comentarios</div><div class="txt">${comentariosDe(p.id).map(c => `<b>${esc(nombreDe(c.autor))}</b> (${esc(new Date(c.created_at).toLocaleDateString("es-MX", { day: "numeric", month: "short" }))}): ${esc(c.texto)}`).join("\n")}</div>` : ""}
       ${p.inspo ? `<div class="lbl">Inspo / Referencia</div><div class="txt">${linkify(p.inspo)}</div>` : ""}
+      ${p.publicacion ? `<div class="lbl">Publicación</div><div class="txt">${linkify(p.publicacion)}</div>` : ""}
       ${p.contenido ? `<div class="lbl">Contenido</div><div class="txt">${linkify(p.contenido)}</div>` : ""}
     </div></article>`; }).join("") || "<p>No hay publicaciones con fecha en este mes.</p>"}</section>`;
     const area = $("print-area"); area.innerHTML = h;
